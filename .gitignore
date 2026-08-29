@@ -12,3 +12,5 @@ build/symbols/
 admin-dashboard/node_modules/
 admin-dashboard/dist/
 .supabase/
+.worktrees/
+.superpowers/
