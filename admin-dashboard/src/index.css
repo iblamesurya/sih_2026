@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+@theme {
+  --font-heading: 'Space Grotesk', sans-serif;
+  --font-body: 'Outfit', sans-serif;
+  --color-brand-bg: #0A0A0B;
+  --color-brand-surface: #171717;
+  --color-brand-primary: #00E5FF;
+  --color-brand-secondary: #10B981;
+  --color-brand-urgent: #E55C5C;
+  --color-brand-watch: #E5B05C;
+  --color-brand-info: #5C9EE5;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0A0A0B;
+  color: #F1F5F9;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Custom scrollbar for deep ocean matte */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0B;
+}
+::-webkit-scrollbar-thumb {
+  background: #262626;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
