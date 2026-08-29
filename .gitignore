@@ -1,0 +1,14 @@
+.dart_tool/
+.build/
+build/
+.pub-cache/
+.pub/
+*.lock
+.env
+**/.env
+*.apk
+*.aab
+build/symbols/
+admin-dashboard/node_modules/
+admin-dashboard/dist/
+.supabase/
