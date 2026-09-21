@@ -292,7 +292,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: exp.category.color.withOpacity(0.15),
+                  color: exp.category.color.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(exp.category.icon, color: exp.category.color, size: 20),
@@ -389,7 +389,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
           ),
           child: Column(
             children: [
@@ -433,7 +433,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      color: AppColors.secondary.withOpacity(0.2),
+                      color: AppColors.secondary.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: AppColors.secondary),
                     ),

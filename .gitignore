@@ -14,3 +14,14 @@ admin-dashboard/dist/
 .supabase/
 .worktrees/
 .superpowers/
+.agents/
+
+# Release signing & keystores
+key.properties
+*.keystore
+*.jks
+
+# Environment configurations
+.env.local
+.env.production
+.env.staging

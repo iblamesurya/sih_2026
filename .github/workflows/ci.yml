@@ -1,0 +1,146 @@
+name: PrawnGuard CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flutter-quality-gate:
+    name: Flutter Lint & Automated Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:"
+
+      - name: Cache Pub Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            .dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+
+      - name: Run Static Analysis (flutter analyze)
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Full Test Suite (flutter test)
+        run: flutter test --coverage
+
+      - name: Upload Test Coverage Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: flutter-coverage-report
+          path: coverage/
+          retention-days: 14
+
+  admin-dashboard-build:
+    name: Admin Dashboard (React 19 + Vite 8)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-dashboard
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: admin-dashboard/package-lock.json
+
+      - name: Install Dashboard Dependencies
+        run: npm ci || npm install
+
+      - name: Build Dashboard Portal (Vite Production)
+        run: npm run build
+
+      - name: Upload Dashboard Production Dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-dashboard-dist
+          path: admin-dashboard/dist/
+          retention-days: 14
+
+  android-release-build:
+    name: Android Release APK Compilation
+    needs: [flutter-quality-gate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Cache Gradle Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=ENVIRONMENT=production \
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://xyzcompany.supabase.co' }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY || 'dummy_anon_key' }}
+
+      - name: Compute Artifact SHA256 Checksum
+        run: |
+          sha256sum build/app/outputs/flutter-apk/app-release.apk > build/app/outputs/flutter-apk/app-release.apk.sha256
+          cat build/app/outputs/flutter-apk/app-release.apk.sha256
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prawnguard-release-apk
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-release.apk.sha256
+          retention-days: 30

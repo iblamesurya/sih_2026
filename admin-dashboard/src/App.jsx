@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import FarmMap from './pages/FarmMap';
+import MarketPrices from './pages/MarketPrices';
+import Announcements from './pages/Announcements';
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -32,28 +34,12 @@ export default function App() {
             element={
               <PlaceholderPage
                 title="Disease Scans & AI Vision Diagnostics"
-                description="Pathology vision history and Gemini 2.0 triage logs."
+                description="Pathology vision history and Gemini Flash triage logs."
               />
             }
           />
-          <Route
-            path="market"
-            element={
-              <PlaceholderPage
-                title="Market Prices & Mandi Rates"
-                description="Live shrimp procurement rates across regional hubs."
-              />
-            }
-          />
-          <Route
-            path="announcements"
-            element={
-              <PlaceholderPage
-                title="Broadcasts & Announcements"
-                description="Farmer advisory broadcasts and regional weather alerts."
-              />
-            }
-          />
+          <Route path="market" element={<MarketPrices />} />
+          <Route path="announcements" element={<Announcements />} />
           <Route
             path="users"
             element={
