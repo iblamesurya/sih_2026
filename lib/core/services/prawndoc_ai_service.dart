@@ -1393,6 +1393,9 @@ class PrawnDocAIService {
     );
   }
 
+  /// Direct Gemini API key from environment if configured
+  static const String _geminiApiKey = String.fromEnvironment('GEMINI_API_KEY');
+
   /// Performs complete multimodal vision analysis with image preprocessing, deduplication,
   /// RAG context injection, quota validation, Edge Function execution, and robust fallback.
   Future<DiagnosticResult> analyzeShrimpImage({
@@ -1404,6 +1407,7 @@ class PrawnDocAIService {
     double? salinity,
     double? temperature,
     String? farmerNotes,
+    ShrimpDisease? suspectedDisease,
     required int currentScansToday,
     required bool isPro,
   }) async {
@@ -1425,51 +1429,115 @@ class PrawnDocAIService {
       return _sessionCache[preprocessed.md5Hash]!;
     }
 
-    // 4. Construct RAG Context
-    final ragContext = buildRAGContext(
-      doc: doc,
-      ph: ph,
-      dissolvedOxygen: dissolvedOxygen,
-      ammonia: ammonia,
-      salinity: salinity,
-      temperature: temperature,
-      farmerNotes: farmerNotes,
-    );
+    // 4. Try Direct Gemini 1.5/2.0 Flash Multimodal Vision API if key is available
+    if (_geminiApiKey.isNotEmpty && !_geminiApiKey.contains('your-gemini')) {
+      try {
+        final client = _httpClient ?? http.Client();
+        final geminiUrl =
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_geminiApiKey';
 
-    // 5. Attempt Edge Function invocation
-    try {
-      final client = _httpClient ?? http.Client();
-      final edgeFunctionUrl = '${SupabaseClientService.defaultUrl}/functions/v1/prawndoc-ai';
+        final prompt =
+            'You are PrawnDoc AI, an expert veterinary aquatic pathologist specializing in Litopenaeus vannamei and Penaeus monodon shrimp diseases in Indian aquaculture.\n'
+            'Analyze this shrimp specimen image and water telemetry: pH=$ph, DO=$dissolvedOxygen, Ammonia=$ammonia, Salinity=$salinity, Temp=$temperature, DOC=$doc.\n'
+            'Farmer clinical notes: ${farmerNotes ?? "None provided"}.\n'
+            'Diagnose one condition from: White Spot Syndrome Virus (WSSV), Enterocytozoon hepatopenaei (EHP / Microsporidiosis), Running Mortality Syndrome (RMS), Black Gill Disease, White Faeces Syndrome (WFS), Early Mortality Syndrome / Acute Hepatopancreatic Necrosis Disease (EMS/AHPND), Loose Shell Syndrome (LSS), Vibriosis (Luminescent Bacterial Disease), Cotton Shrimp Disease, Infectious Hypodermal and Haematopoietic Necrosis Virus (IHHNV), Yellow Head Virus (YHV), or Healthy Shrimp / No Pathological Lesions.\n'
+            'Return strictly valid JSON with exact keys: "disease", "scientificName", "confidence" (0.0-1.0), "severity" ("low"|"medium"|"high"|"critical"), "symptoms" (list of strings), "treatmentRecommendations" (list of strings), "biosecurityMeasures" (list of strings), "teluguSummary" (2-sentence Telugu explanation), "teluguRecommendations" (list of strings in Telugu).';
 
-      final requestPayload = {
-        'image': preprocessed.base64Data,
-        'image_hash': preprocessed.md5Hash,
-        ...ragContext,
-      };
+        final geminiPayload = {
+          'contents': [
+            {
+              'parts': [
+                {'text': prompt},
+                {
+                  'inlineData': {
+                    'mimeType': 'image/jpeg',
+                    'data': preprocessed.base64Data,
+                  }
+                }
+              ]
+            }
+          ],
+          'generationConfig': {
+            'temperature': 0.1,
+            'responseMimeType': 'application/json',
+          },
+        };
 
-      final response = await client
-          .post(
-            Uri.parse(edgeFunctionUrl),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${SupabaseClientService.defaultAnonKey}',
-            },
-            body: jsonEncode(requestPayload),
-          )
-          .timeout(const Duration(seconds: 15));
+        final response = await client
+            .post(
+              Uri.parse(geminiUrl),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(geminiPayload),
+            )
+            .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final parsedJson = parseRobustJson(response.body);
-        final diagnosis = DiagnosticResult.fromJson(
-          parsedJson,
-          imageHash: preprocessed.md5Hash,
-          isOffline: false,
-        );
-        _sessionCache[preprocessed.md5Hash] = diagnosis;
-        return diagnosis;
+        if (response.statusCode == 200) {
+          final geminiJson = jsonDecode(response.body);
+          final rawContent =
+              geminiJson['candidates']?[0]?['content']?['parts']?[0]?['text'];
+          if (rawContent != null) {
+            final parsedJson = parseRobustJson(rawContent.toString());
+            final diagnosis = DiagnosticResult.fromJson(
+              parsedJson,
+              imageHash: preprocessed.md5Hash,
+              isOffline: false,
+            );
+            _sessionCache[preprocessed.md5Hash] = diagnosis;
+            return diagnosis;
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('PrawnDoc: Direct Gemini call notice ($e), checking Edge Function.');
+        }
       }
-    } catch (_) {
-      // Gracefully fall back to offline heuristic evaluation on network/API errors
+    }
+
+    // 5. Attempt Supabase Edge Function invocation if configured
+    if (!SupabaseClientService.defaultUrl.contains('xyzcompany')) {
+      try {
+        final client = _httpClient ?? http.Client();
+        final edgeFunctionUrl =
+            '${SupabaseClientService.defaultUrl}/functions/v1/prawndoc-ai';
+
+        final requestPayload = {
+          'image': preprocessed.base64Data,
+          'image_hash': preprocessed.md5Hash,
+          'waterParameters': {
+            if (ph != null) 'ph': ph,
+            if (dissolvedOxygen != null) 'dissolvedOxygen': dissolvedOxygen,
+            if (ammonia != null) 'ammonia': ammonia,
+            if (salinity != null) 'salinity': salinity,
+            if (temperature != null) 'temperature': temperature,
+            if (doc != null) 'doc': doc,
+          },
+          'notes': farmerNotes ?? '',
+        };
+
+        final response = await client
+            .post(
+              Uri.parse(edgeFunctionUrl),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ${SupabaseClientService.defaultAnonKey}',
+              },
+              body: jsonEncode(requestPayload),
+            )
+            .timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200) {
+          final parsedJson = parseRobustJson(response.body);
+          final diagnosis = DiagnosticResult.fromJson(
+            parsedJson,
+            imageHash: preprocessed.md5Hash,
+            isOffline: false,
+          );
+          _sessionCache[preprocessed.md5Hash] = diagnosis;
+          return diagnosis;
+        }
+      } catch (_) {
+        // Gracefully fall back to offline heuristic evaluation on network/API errors
+      }
     }
 
     // 6. Offline Heuristic Fallback
@@ -1481,6 +1549,7 @@ class PrawnDocAIService {
       salinity: salinity,
       temperature: temperature,
       farmerNotes: farmerNotes,
+      suspectedDisease: suspectedDisease,
       imageHash: preprocessed.md5Hash,
     );
 

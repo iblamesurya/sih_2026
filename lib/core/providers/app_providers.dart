@@ -88,6 +88,10 @@ final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.dark);
 final currentSubscriptionTierProvider =
     StateProvider<SubscriptionTier>((ref) => SubscriptionTier.free);
 
+/// Active GPS location coordinates.
+final currentLocationCoordinatesProvider =
+    StateProvider<LocationCoordinates?>((ref) => null);
+
 // ============================================================================
 // Domain Entity State Providers
 // ============================================================================
@@ -135,6 +139,7 @@ void clearAllUserData(dynamic ref) {
   ref.read(alertsProvider.notifier).state = <WaterAlert>[];
   ref.read(activeFeedPlanProvider.notifier).state = null;
   ref.read(currentSubscriptionTierProvider.notifier).state = SubscriptionTier.free;
+  ref.read(currentLocationCoordinatesProvider.notifier).state = null;
 }
 
 /// Extension helper on [WidgetRef] for convenient state clearing from UI widgets.

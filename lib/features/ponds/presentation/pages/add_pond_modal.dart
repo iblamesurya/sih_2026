@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
 import '../../../../core/services/subscription_service.dart';
+import '../../../../core/services/location_service.dart';
 
 /// Modal dialog / page to register a new aquaculture pond (/add-pond).
 class AddPondModal extends ConsumerStatefulWidget {
@@ -24,6 +25,10 @@ class _AddPondModalState extends ConsumerState<AddPondModal> {
   final _abwController = TextEditingController(text: '0.02');
 
   String _selectedSpecies = 'Litopenaeus vannamei';
+  double? _latitude;
+  double? _longitude;
+  String? _gpsLocationName;
+  bool _isCapturingGps = false;
 
   @override
   void dispose() {
@@ -33,6 +38,29 @@ class _AddPondModalState extends ConsumerState<AddPondModal> {
     _docController.dispose();
     _abwController.dispose();
     super.dispose();
+  }
+
+  Future<void> _captureGpsLocation() async {
+    setState(() => _isCapturingGps = true);
+    try {
+      final loc = await ref.read(locationServiceProvider).getCurrentLocation(forceRefresh: true);
+      setState(() {
+        _latitude = loc.latitude;
+        _longitude = loc.longitude;
+        _gpsLocationName = loc.locationName;
+        _isCapturingGps = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('GPS Tagged: ${loc.locationName} (${loc.latitude.toStringAsFixed(3)}, ${loc.longitude.toStringAsFixed(3)})'),
+            backgroundColor: AppColors.secondary,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isCapturingGps = false);
+    }
   }
 
   Future<void> _savePond() async {
@@ -68,6 +96,9 @@ class _AddPondModalState extends ConsumerState<AddPondModal> {
       'doc': int.tryParse(_docController.text) ?? 1,
       'species': _selectedSpecies,
       'initialAbw': double.tryParse(_abwController.text) ?? 0.02,
+      'latitude': _latitude ?? LocationService.defaultLatitude,
+      'longitude': _longitude ?? LocationService.defaultLongitude,
+      'locationName': _gpsLocationName ?? LocationService.defaultLocationName,
       'status': 'Optimal',
       'created_at': DateTime.now().toIso8601String(),
     };
@@ -243,6 +274,31 @@ class _AddPondModalState extends ConsumerState<AddPondModal> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 16),
+
+            // GPS Geo-Tagging Button
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _latitude != null ? AppColors.secondary : AppColors.primary,
+                side: BorderSide(color: _latitude != null ? AppColors.secondary : AppColors.primary),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _isCapturingGps ? null : _captureGpsLocation,
+              icon: _isCapturingGps
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                    )
+                  : Icon(_latitude != null ? Icons.check_circle : Icons.my_location, size: 18),
+              label: Text(
+                _latitude != null
+                    ? '${isTelugu ? "లొకేషన్ ట్యాగ్ చేయబడింది" : "GPS Tagged"}: ${_gpsLocationName ?? "Pond Coordinates"}'
+                    : (isTelugu ? 'ఈ చెరువుకు ప్రస్తుత GPS లొకేషన్ ట్యాగ్ చేయండి' : '📍 Auto-Tag Pond with Device GPS'),
+                style: GoogleFonts.spaceGrotesk(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
             ),
             const SizedBox(height: 24),
 

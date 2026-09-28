@@ -14,10 +14,22 @@ class ProfileSettingsPage extends ConsumerStatefulWidget {
 }
 
 class _ProfileSettingsPageState extends ConsumerState<ProfileSettingsPage> {
-  final _nameController = TextEditingController(text: 'Surya Tummala');
-  final _phoneController = TextEditingController(text: '9876543210');
-  final _farmNameController = TextEditingController(text: 'Sri Sai Aquaculture Farms');
-  final _districtController = TextEditingController(text: 'West Godavari');
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _farmNameController = TextEditingController();
+  final _districtController = TextEditingController();
+  bool _isDetectingGps = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final user = ref.read(currentUserProvider);
+    final farm = ref.read(currentFarmProvider);
+    _nameController.text = user?['name']?.toString() ?? 'Surya Tummala';
+    _phoneController.text = user?['phone']?.toString() ?? '9876543210';
+    _farmNameController.text = farm?['farmName']?.toString() ?? 'Sri Sai Aquaculture Farms';
+    _districtController.text = farm?['district']?.toString() ?? 'West Godavari, AP';
+  }
 
   @override
   void dispose() {
@@ -26,6 +38,28 @@ class _ProfileSettingsPageState extends ConsumerState<ProfileSettingsPage> {
     _farmNameController.dispose();
     _districtController.dispose();
     super.dispose();
+  }
+
+  Future<void> _detectLocationFromGps() async {
+    setState(() => _isDetectingGps = true);
+    try {
+      final loc = await ref.read(locationServiceProvider).getCurrentLocation(forceRefresh: true);
+      ref.read(currentLocationCoordinatesProvider.notifier).state = loc;
+      setState(() {
+        _districtController.text = loc.locationName;
+        _isDetectingGps = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('District updated from GPS: ${loc.locationName}'),
+            backgroundColor: AppColors.secondary,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isDetectingGps = false);
+    }
   }
 
   void _saveProfile() {
@@ -88,6 +122,27 @@ class _ProfileSettingsPageState extends ConsumerState<ProfileSettingsPage> {
           _ProfileField(
             controller: _districtController,
             label: isTelugu ? 'జిల్లా / ప్రాంతం' : 'District / Region',
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: _isDetectingGps ? null : _detectLocationFromGps,
+            icon: _isDetectingGps
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                  )
+                : const Icon(Icons.my_location, size: 16),
+            label: Text(
+              isTelugu ? 'ప్రస్తుత GPS ద్వారా జిల్లాను గుర్తించండి' : '📍 Detect District from Device GPS',
+              style: GoogleFonts.spaceGrotesk(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
           ),
           const SizedBox(height: 24),
 

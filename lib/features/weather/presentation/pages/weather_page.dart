@@ -24,22 +24,24 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
   @override
   void initState() {
     super.initState();
+    final initialWeather = WeatherData.defaultFallback();
+    _weather = initialWeather;
+    _hypoxia = ref.read(weatherServiceProvider).evaluateHypoxiaRisk(initialWeather);
+    _isLoading = false;
     _loadWeather();
   }
 
   Future<void> _loadWeather({bool forceRefresh = false}) async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
     final weatherService = ref.read(weatherServiceProvider);
+    final locationService = ref.read(locationServiceProvider);
 
     try {
-      // Default to coastal Andhra aquaculture coordinates (Bhimavaram: 16.5449° N, 81.5212° E)
+      final location = await locationService.getCurrentLocation(forceRefresh: forceRefresh);
+      ref.read(currentLocationCoordinatesProvider.notifier).state = location;
+
       final weather = await weatherService.fetchWeather(
-        lat: 16.5449,
-        lon: 81.5212,
+        lat: location.latitude,
+        lon: location.longitude,
         forceRefresh: forceRefresh,
       );
 
@@ -63,7 +65,11 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final farm = ref.watch(currentFarmProvider);
-    final farmLocation = farm?['district'] ?? 'Bhimavaram, Andhra Pradesh';
+    final currentLoc = ref.watch(currentLocationCoordinatesProvider);
+    final displayedLocation = currentLoc != null
+        ? currentLoc.locationName
+        : (farm?['district'] ?? 'Bhimavaram, Andhra Pradesh');
+    final isGpsLive = currentLoc != null && !currentLoc.isFallback;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -81,7 +87,7 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: AppColors.primary),
-            tooltip: 'Refresh Weather',
+            tooltip: 'Refresh Weather & GPS',
             onPressed: () => _loadWeather(forceRefresh: true),
           ),
         ],
@@ -128,18 +134,32 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  farmLocation,
-                                  style: GoogleFonts.spaceGrotesk(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
+                                Row(
+                                  children: [
+                                    Icon(
+                                      isGpsLive ? Icons.my_location : Icons.location_on_outlined,
+                                      size: 16,
+                                      color: isGpsLive ? AppColors.secondary : AppColors.alertWatch,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        displayedLocation,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.spaceGrotesk(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   _weather != null
-                                      ? '${_weather!.description.toUpperCase()} • Wind ${_weather!.windSpeed.toStringAsFixed(1)} km/h'
+                                      ? '${_weather!.description.toUpperCase()} • Wind ${_weather!.windSpeed.toStringAsFixed(1)} km/h • ${currentLoc != null ? "${currentLoc.latitude.toStringAsFixed(2)}°N, ${currentLoc.longitude.toStringAsFixed(2)}°E" : "16.54°N, 81.52°E"}'
                                       : 'Weather Telemetry Active',
                                   style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary),
                                 ),

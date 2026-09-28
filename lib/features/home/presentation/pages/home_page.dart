@@ -31,7 +31,14 @@ class _HomePageState extends ConsumerState<HomePage> {
   Future<void> _loadDashboardWeather() async {
     try {
       final weatherService = ref.read(weatherServiceProvider);
-      final weather = await weatherService.fetchWeather(lat: 16.5449, lon: 81.5212);
+      final locationService = ref.read(locationServiceProvider);
+      final location = await locationService.getCurrentLocation();
+      ref.read(currentLocationCoordinatesProvider.notifier).state = location;
+
+      final weather = await weatherService.fetchWeather(
+        lat: location.latitude,
+        lon: location.longitude,
+      );
       final hypoxia = weatherService.evaluateHypoxiaRisk(weather);
       if (mounted) {
         setState(() {
@@ -52,8 +59,9 @@ class _HomePageState extends ConsumerState<HomePage> {
     final feedPlan = ref.watch(activeFeedPlanProvider);
     final subscriptionTier = ref.watch(currentSubscriptionTierProvider);
 
+    final currentLoc = ref.watch(currentLocationCoordinatesProvider);
     final farmName = farm?['farmName'] ?? (isTelugu ? 'నా ఆక్వాకల్చర్ ఫార్మ్' : 'My Aquaculture Farm');
-    final farmLocation = farm?['district'] ?? 'Coastal Andhra Pradesh';
+    final farmLocation = currentLoc?.locationName ?? farm?['district'] ?? 'Coastal Andhra Pradesh';
 
     return Scaffold(
       backgroundColor: AppColors.background,

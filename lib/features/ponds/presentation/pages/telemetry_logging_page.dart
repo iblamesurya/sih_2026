@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -235,17 +235,81 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                       children: [
                         _VoiceSampleChip(
                           label: 'చెరువు 2: pH 7.8, DO 5.2',
-                          onTap: () => _parseVoice('చెరువు 2 లో pH 7.8, DO 5.2, feed 25 kg'),
+                          onTap: () {
+                            const text = 'చెరువు 2 లో pH 7.8, DO 5.2, feed 25 kg';
+                            _voiceInputController.text = text;
+                            _parseVoice(text);
+                          },
                         ),
                         const SizedBox(width: 8),
                         _VoiceSampleChip(
                           label: 'Pond 1: Salinity 15, Ammonia 0.04',
-                          onTap: () => _parseVoice('Pond 1 lo salinity 15 ppt ammonia 0.04'),
+                          onTap: () {
+                            const text = 'Pond 1 lo salinity 15 ppt ammonia 0.04';
+                            _voiceInputController.text = text;
+                            _parseVoice(text);
+                          },
                         ),
                         const SizedBox(width: 8),
                         _VoiceSampleChip(
                           label: 'చెరువు 1: మేత 35 కిలోలు',
-                          onTap: () => _parseVoice('ఉదయం 1వ చెరువులో మేత 35 కిలోలు వేశాము'),
+                          onTap: () {
+                            const text = 'ఉదయం 1వ చెరువులో మేత 35 కిలోలు వేశాము';
+                            _voiceInputController.text = text;
+                            _parseVoice(text);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Custom Voice / Telugu Text Input Field
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.cardBorder),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        const Icon(Icons.mic, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _voiceInputController,
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              color: AppColors.textPrimary,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: isTelugu
+                                  ? 'ఇక్కడ తెలుగులో మాట్లాడండి లేదా టైప్ చేయండి...'
+                                  : 'Type or dictate code-mixed Telugu/English...',
+                              hintStyle: GoogleFonts.outfit(
+                                fontSize: 12,
+                                color: AppColors.textTertiary,
+                              ),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onSubmitted: (val) {
+                              if (val.trim().isNotEmpty) {
+                                _parseVoice(val);
+                              }
+                            },
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.auto_awesome, color: AppColors.primary, size: 20),
+                          tooltip: isTelugu ? 'విశ్లేషించండి' : 'Extract Telemetry',
+                          onPressed: () {
+                            if (_voiceInputController.text.trim().isNotEmpty) {
+                              _parseVoice(_voiceInputController.text);
+                            }
+                          },
                         ),
                       ],
                     ),
@@ -262,7 +326,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                         border: Border.all(color: AppColors.cardBorder),
                       ),
                       child: Text(
-                        'Voice Input: "$_detectedTeluguPhrase"',
+                        'Parsed: "$_detectedTeluguPhrase"',
                         style: GoogleFonts.outfit(
                           fontSize: 12,
                           color: AppColors.primary,
