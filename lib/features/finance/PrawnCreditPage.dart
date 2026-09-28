@@ -1,110 +1,111 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/providers/app_providers.dart';
 import 'models/finance_models.dart';
 import 'widgets/ExpenseForm.dart';
 import 'widgets/HarvestCard.dart';
 
-class PrawnCreditPage extends StatefulWidget {
+class PrawnCreditPage extends ConsumerStatefulWidget {
   const PrawnCreditPage({super.key});
 
   @override
-  State<PrawnCreditPage> createState() => _PrawnCreditPageState();
+  ConsumerState<PrawnCreditPage> createState() => _PrawnCreditPageState();
 }
 
-class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProviderStateMixin {
+class _PrawnCreditPageState extends ConsumerState<PrawnCreditPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
-  // Mock initial dataset
-  final List<Expense> _expenses = [
-    Expense(
-      id: 'exp_1',
-      category: ExpenseCategory.feed,
-      amount: 145000,
-      date: DateTime.now().subtract(const Duration(days: 2)),
-      pondId: 'p_1',
-      pondName: 'Pond 1 (Vannamei)',
-      supplier: 'CP Feeds India',
-      notes: 'Grow-out feed starter 500kg',
-    ),
-    Expense(
-      id: 'exp_2',
-      category: ExpenseCategory.seedPL,
-      amount: 68000,
-      date: DateTime.now().subtract(const Duration(days: 45)),
-      pondId: 'p_1',
-      pondName: 'Pond 1 (Vannamei)',
-      supplier: 'Apex Hatcheries Nellore',
-      notes: '100,000 PL15 certified SPF seed',
-    ),
-    Expense(
-      id: 'exp_3',
-      category: ExpenseCategory.powerFuel,
-      amount: 32000,
-      date: DateTime.now().subtract(const Duration(days: 10)),
-      pondId: 'p_2',
-      pondName: 'Pond 2 (Monodon)',
-      supplier: 'APSPDCL / Local Diesel',
-      notes: 'Aerator power bill & backup diesel generator',
-    ),
-    Expense(
-      id: 'exp_4',
-      category: ExpenseCategory.probioticsChemicals,
-      amount: 18500,
-      date: DateTime.now().subtract(const Duration(days: 5)),
-      pondId: 'p_1',
-      pondName: 'Pond 1 (Vannamei)',
-      supplier: 'AquaBio Care',
-      notes: 'Soil & Water Probiotics + Minerals',
-    ),
-  ];
-
-  final List<HarvestRecord> _harvests = [
-    HarvestRecord(
-      id: 'har_1',
-      date: DateTime.now().subtract(const Duration(days: 12)),
-      pondId: 'p_1',
-      pondName: 'Pond 1 (Vannamei)',
-      harvestType: 'Partial',
-      biomassKg: 2450,
-      countPerKg: 42,
-      pricePerKg: 380,
-      fcr: 1.25,
-      buyerName: 'Nellore Aqua Exports Ltd',
-    ),
-    HarvestRecord(
-      id: 'har_2',
-      date: DateTime.now().subtract(const Duration(days: 60)),
-      pondId: 'p_2',
-      pondName: 'Pond 2 (Monodon)',
-      harvestType: 'Complete',
-      biomassKg: 4100,
-      countPerKg: 30,
-      pricePerKg: 520,
-      fcr: 1.35,
-      buyerName: 'Coastal Seafoods Pvt Ltd',
-    ),
-  ];
-
-  final PrawnCreditScore _creditScore = PrawnCreditScore(
-    score: 785,
-    tier: 'Tier-1 Elite',
-    maxCreditLimit: 350000,
-    monthlyInterestRate: 1.1,
-    riskLevel: 'Low',
-    scoreFactors: {
-      'FCR Efficiency (1.25 - 1.35)': 94,
-      'Water Parameter Logging': 90,
-      'Harvest Profit Consistency': 88,
-      'Disease Free Crop Record': 96,
-    },
-  );
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initializeStarterFinanceDataIfEmpty();
+      }
+    });
+  }
+
+  void _initializeStarterFinanceDataIfEmpty() {
+    final currentExpenses = ref.read(expensesProvider);
+    final currentHarvests = ref.read(harvestsProvider);
+
+    if (currentExpenses.isEmpty && currentHarvests.isEmpty) {
+      // Seed initial realistic aquaculture ledger data
+      ref.read(expensesProvider.notifier).state = [
+        Expense(
+          id: 'exp_1',
+          category: ExpenseCategory.feed,
+          amount: 145000,
+          date: DateTime.now().subtract(const Duration(days: 2)),
+          pondId: '1',
+          pondName: 'Pond 1 (Vannamei)',
+          supplier: 'CP Feeds India',
+          notes: 'Grow-out feed starter 500kg',
+        ),
+        Expense(
+          id: 'exp_2',
+          category: ExpenseCategory.seedPL,
+          amount: 68000,
+          date: DateTime.now().subtract(const Duration(days: 45)),
+          pondId: '1',
+          pondName: 'Pond 1 (Vannamei)',
+          supplier: 'Apex Hatcheries Nellore',
+          notes: '100,000 PL15 certified SPF seed',
+        ),
+        Expense(
+          id: 'exp_3',
+          category: ExpenseCategory.powerFuel,
+          amount: 32000,
+          date: DateTime.now().subtract(const Duration(days: 10)),
+          pondId: '2',
+          pondName: 'Pond 2 (Vannamei)',
+          supplier: 'APSPDCL / Local Diesel',
+          notes: 'Aerator power bill & backup diesel generator',
+        ),
+        Expense(
+          id: 'exp_4',
+          category: ExpenseCategory.probioticsChemicals,
+          amount: 18500,
+          date: DateTime.now().subtract(const Duration(days: 5)),
+          pondId: '1',
+          pondName: 'Pond 1 (Vannamei)',
+          supplier: 'AquaBio Care',
+          notes: 'Soil & Water Probiotics + Minerals',
+        ),
+      ];
+
+      ref.read(harvestsProvider.notifier).state = [
+        HarvestRecord(
+          id: 'har_1',
+          date: DateTime.now().subtract(const Duration(days: 12)),
+          pondId: '1',
+          pondName: 'Pond 1 (Vannamei)',
+          harvestType: 'Partial',
+          biomassKg: 2450,
+          countPerKg: 42,
+          pricePerKg: 380,
+          fcr: 1.25,
+          buyerName: 'Nellore Aqua Exports Ltd',
+        ),
+        HarvestRecord(
+          id: 'har_2',
+          date: DateTime.now().subtract(const Duration(days: 60)),
+          pondId: '2',
+          pondName: 'Pond 2 (Vannamei)',
+          harvestType: 'Complete',
+          biomassKg: 4100,
+          countPerKg: 30,
+          pricePerKg: 520,
+          fcr: 1.35,
+          buyerName: 'Coastal Seafoods Pvt Ltd',
+        ),
+      ];
+    }
   }
 
   @override
@@ -113,14 +114,17 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
     super.dispose();
   }
 
-  double get _totalExpenses => _expenses.fold(0.0, (sum, item) => sum + item.amount);
-  double get _totalRevenue => _harvests.fold(0.0, (sum, item) => sum + item.totalRevenue);
-  double get _netProfit => _totalRevenue - _totalExpenses;
-
   void _addExpense(Expense newExpense) {
-    setState(() {
-      _expenses.insert(0, newExpense);
+    final currentExpenses = ref.read(expensesProvider);
+    ref.read(expensesProvider.notifier).state = [newExpense, ...currentExpenses];
+
+    // Enqueue to offline sync
+    final offlineSync = ref.read(offlineSyncProvider);
+    offlineSync.enqueue({
+      'type': 'INSERT_EXPENSE',
+      'expense_data': newExpense.toJson(),
     });
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Expense logged successfully! / ఖర్చు దాఖలైంది', style: GoogleFonts.outfit()),
@@ -132,6 +136,31 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final currencyFormatter = NumberFormat.currency(symbol: '₹', decimalDigits: 0);
+    final expenses = ref.watch(expensesProvider);
+    final harvests = ref.watch(harvestsProvider);
+
+    final totalExpenses = expenses.fold(0.0, (sum, item) => sum + item.amount);
+    final totalRevenue = harvests.fold(0.0, (sum, item) => sum + item.totalRevenue);
+    final netProfit = totalRevenue - totalExpenses;
+
+    // Dynamic credit score calculation based on real financial ratio
+    final fcrScore = harvests.isNotEmpty && harvests.every((h) => h.fcr <= 1.4) ? 95 : 80;
+    final profitRatio = totalRevenue > 0 ? (netProfit / totalRevenue).clamp(0.0, 1.0) : 0.25;
+    final calculatedScore = (600 + (profitRatio * 200) + (fcrScore * 0.9)).round().clamp(300, 900);
+
+    final creditScore = PrawnCreditScore(
+      score: calculatedScore,
+      tier: calculatedScore >= 750 ? 'Tier-1 Elite' : (calculatedScore >= 650 ? 'Tier-2 Preferred' : 'Tier-3 Standard'),
+      maxCreditLimit: calculatedScore >= 750 ? 500000 : (calculatedScore >= 650 ? 300000 : 150000),
+      monthlyInterestRate: calculatedScore >= 750 ? 1.05 : 1.25,
+      riskLevel: calculatedScore >= 750 ? 'Low' : 'Moderate',
+      scoreFactors: {
+        'FCR Biomass Efficiency': fcrScore,
+        'Telemetry & Water Consistency': 92,
+        'Profit Margin Sustainability': (profitRatio * 100).round().clamp(50, 98),
+        'Disease Free Harvest Record': 94,
+      },
+    );
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -175,16 +204,16 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
       body: Column(
         children: [
           // Finance Top Summary Header
-          _buildSummaryHeader(currencyFormatter),
+          _buildSummaryHeader(currencyFormatter, totalRevenue, totalExpenses, netProfit),
 
           // Tab Bar Views
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
-                _buildExpensesTab(currencyFormatter),
-                _buildHarvestsTab(currencyFormatter),
-                _buildCreditTab(currencyFormatter),
+                _buildExpensesTab(currencyFormatter, expenses),
+                _buildHarvestsTab(currencyFormatter, harvests),
+                _buildCreditTab(currencyFormatter, creditScore),
               ],
             ),
           ),
@@ -205,8 +234,13 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
     );
   }
 
-  Widget _buildSummaryHeader(NumberFormat currencyFormatter) {
-    final isProfit = _netProfit >= 0;
+  Widget _buildSummaryHeader(
+    NumberFormat currencyFormatter,
+    double totalRevenue,
+    double totalExpenses,
+    double netProfit,
+  ) {
+    final isProfit = netProfit >= 0;
     final profitColor = isProfit ? AppColors.secondary : AppColors.alertUrgent;
 
     return Container(
@@ -221,7 +255,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
           Expanded(
             child: _SummaryCard(
               title: 'Revenue / ఆదాయం',
-              amount: currencyFormatter.format(_totalRevenue),
+              amount: currencyFormatter.format(totalRevenue),
               color: AppColors.secondary,
               icon: Icons.trending_up,
             ),
@@ -231,7 +265,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
           Expanded(
             child: _SummaryCard(
               title: 'Expenses / ఖర్చులు',
-              amount: currencyFormatter.format(_totalExpenses),
+              amount: currencyFormatter.format(totalExpenses),
               color: AppColors.alertUrgent,
               icon: Icons.trending_down,
             ),
@@ -241,7 +275,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
           Expanded(
             child: _SummaryCard(
               title: 'Net Profit / లాభం',
-              amount: currencyFormatter.format(_netProfit),
+              amount: currencyFormatter.format(netProfit),
               color: profitColor,
               icon: isProfit ? Icons.account_balance : Icons.warning,
             ),
@@ -251,8 +285,24 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
     );
   }
 
-  Widget _buildExpensesTab(NumberFormat currencyFormatter) {
+  Widget _buildExpensesTab(NumberFormat currencyFormatter, List<Expense> expenses) {
     final dateFormatter = DateFormat('dd MMM');
+
+    if (expenses.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.receipt_long, size: 48, color: AppColors.textTertiary),
+            const SizedBox(height: 12),
+            Text(
+              'No expenses logged yet',
+              style: GoogleFonts.spaceGrotesk(fontSize: 16, color: AppColors.textPrimary),
+            ),
+          ],
+        ),
+      );
+    }
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -272,7 +322,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
               backgroundColor: AppColors.surfaceElevated,
               side: const BorderSide(color: AppColors.cardBorder),
               label: Text(
-                '${_expenses.length} Records',
+                '${expenses.length} Records',
                 style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary),
               ),
             ),
@@ -280,7 +330,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
         ),
         const SizedBox(height: 12),
 
-        ..._expenses.map((exp) {
+        ...expenses.map((exp) {
           return Container(
             margin: const EdgeInsets.only(bottom: 12),
             decoration: BoxDecoration(
@@ -325,7 +375,23 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
     );
   }
 
-  Widget _buildHarvestsTab(NumberFormat currencyFormatter) {
+  Widget _buildHarvestsTab(NumberFormat currencyFormatter, List<HarvestRecord> harvests) {
+    if (harvests.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.agriculture, size: 48, color: AppColors.textTertiary),
+            const SizedBox(height: 12),
+            Text(
+              'No harvest batches recorded yet',
+              style: GoogleFonts.spaceGrotesk(fontSize: 16, color: AppColors.textPrimary),
+            ),
+          ],
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -341,7 +407,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
               ),
             ),
             Text(
-              'Total: ${_harvests.fold(0.0, (s, i) => s + i.biomassKg).toStringAsFixed(0)} kg',
+              'Total: ${harvests.fold(0.0, (s, i) => s + i.biomassKg).toStringAsFixed(0)} kg',
               style: GoogleFonts.spaceGrotesk(
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
@@ -352,7 +418,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
         ),
         const SizedBox(height: 12),
 
-        ..._harvests.map((h) => HarvestCard(
+        ...harvests.map((h) => HarvestCard(
               harvest: h,
               onShareWhatsApp: () {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -375,7 +441,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
     );
   }
 
-  Widget _buildCreditTab(NumberFormat currencyFormatter) {
+  Widget _buildCreditTab(NumberFormat currencyFormatter, PrawnCreditScore creditScore) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -412,7 +478,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
                         textBaseline: TextBaseline.alphabetic,
                         children: [
                           Text(
-                            '${_creditScore.score}',
+                            '${creditScore.score}',
                             style: GoogleFonts.spaceGrotesk(
                               fontSize: 36,
                               fontWeight: FontWeight.bold,
@@ -438,7 +504,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
                       border: Border.all(color: AppColors.secondary),
                     ),
                     child: Text(
-                      _creditScore.tier,
+                      creditScore.tier,
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -450,7 +516,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
               ),
               const SizedBox(height: 16),
               LinearProgressIndicator(
-                value: _creditScore.score / 900,
+                value: creditScore.score / 900,
                 backgroundColor: AppColors.surfaceBase,
                 color: AppColors.primary,
                 minHeight: 8,
@@ -473,11 +539,11 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Pre-Approved Micro-Loan Limit',
+                          'Pre-Approved Aquaculture Credit',
                           style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary),
                         ),
                         Text(
-                          currencyFormatter.format(_creditScore.maxCreditLimit),
+                          currencyFormatter.format(creditScore.maxCreditLimit),
                           style: GoogleFonts.spaceGrotesk(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -501,7 +567,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             title: Text('Apply for Working Capital Loan', style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary)),
                             content: Text(
-                              'Pre-approved credit of ₹3,50,000 with NABARD/SBI Partner Banks at 1.1% monthly interest. Would you like to submit your crop history?',
+                              'Pre-approved credit of ${currencyFormatter.format(creditScore.maxCreditLimit)} with NABARD/SBI Partner Banks at ${creditScore.monthlyInterestRate}% monthly interest. Would you like to submit your crop history?',
                               style: GoogleFonts.outfit(color: AppColors.textSecondary),
                             ),
                             actions: [
@@ -550,7 +616,7 @@ class _PrawnCreditPageState extends State<PrawnCreditPage> with SingleTickerProv
         ),
         const SizedBox(height: 12),
 
-        ..._creditScore.scoreFactors.entries.map((e) {
+        ...creditScore.scoreFactors.entries.map((e) {
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -20,6 +20,7 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
   final _abwController = TextEditingController(text: '18.5');
   final _docController = TextEditingController(text: '65');
 
+  String? _selectedPondId;
   double _survivalRate = 0.85;
   double _temperature = 28.5;
   double _trayAdjustment = 0.0; // -0.20 to +0.10
@@ -31,7 +32,12 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _calculateFeed();
+        final ponds = ref.read(pondListProvider);
+        if (ponds.isNotEmpty) {
+          _onPondSelected(ponds.first['id']?.toString() ?? '1');
+        } else {
+          _calculateFeed();
+        }
       }
     });
   }
@@ -43,6 +49,35 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
     _abwController.dispose();
     _docController.dispose();
     super.dispose();
+  }
+
+  void _onPondSelected(String pondId) {
+    setState(() => _selectedPondId = pondId);
+    final ponds = ref.read(pondListProvider);
+    final pond = ponds.firstWhere(
+      (p) => p['id']?.toString() == pondId,
+      orElse: () => <String, dynamic>{},
+    );
+
+    if (pond.isNotEmpty) {
+      if (pond['stockingDensity'] != null) {
+        _densityController.text = pond['stockingDensity'].toString();
+      }
+      if (pond['areaHa'] != null) {
+        _areaController.text = pond['areaHa'].toString();
+      }
+      if (pond['doc'] != null) {
+        _docController.text = pond['doc'].toString();
+      }
+      if (pond['initialAbw'] != null) {
+        // Estimate current ABW based on DOC if initial was small PL
+        final doc = (pond['doc'] as num?)?.toInt() ?? 1;
+        final estAbw = doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : (pond['initialAbw'] as num?)?.toDouble() ?? 0.02;
+        _abwController.text = estAbw.toStringAsFixed(1);
+      }
+    }
+
+    _calculateFeed();
   }
 
   void _calculateFeed() {
@@ -73,9 +108,11 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
   Future<void> _logFeedRation() async {
     if (_feedPlan == null) return;
     final offlineSync = ref.read(offlineSyncProvider);
+    final currentFeedLogs = ref.read(feedLogsProvider);
 
-    final mutation = {
-      'type': 'INSERT_FEED_PLAN',
+    final newLog = {
+      'id': 'feed_${DateTime.now().millisecondsSinceEpoch}',
+      'pond_id': _selectedPondId ?? '1',
       'biomass_kg': _feedPlan!.biomassKg,
       'daily_feed_kg': _feedPlan!.adjustedDailyFeedKg,
       'meal1_kg': _feedPlan!.meal1Kg,
@@ -85,13 +122,19 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
       'timestamp': DateTime.now().toIso8601String(),
     };
 
-    await offlineSync.enqueue(mutation);
+    // Update in-memory state so home and reports reactively reflect it
+    ref.read(feedLogsProvider.notifier).state = [newLog, ...currentFeedLogs];
+
+    await offlineSync.enqueue({
+      'type': 'INSERT_FEED_PLAN',
+      'feed_data': newLog,
+    });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Daily Feed Plan (${_feedPlan!.adjustedDailyFeedKg.toStringAsFixed(1)} kg) queued/saved successfully!',
+            'Daily Feed Plan (${_feedPlan!.adjustedDailyFeedKg.toStringAsFixed(1)} kg) applied & saved successfully!',
             style: GoogleFonts.outfit(color: Colors.white),
           ),
           backgroundColor: AppColors.secondary,
@@ -104,6 +147,7 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
   Widget build(BuildContext context) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
+    final ponds = ref.watch(pondListProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -139,15 +183,66 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  isTelugu ? 'చెరువు బయోమాస్ & పారామితులు' : 'Biomass & Environmental Inputs',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isTelugu ? 'చెరువు ఎంపిక & పారామితులు' : 'Pond Selection & Parameters',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.secondary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'ICAR-CIBA Model',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.secondary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 14),
+
+                // Pond Selector Dropdown
+                if (ponds.isNotEmpty) ...[
+                  DropdownButtonFormField<String>(
+                    value: _selectedPondId ?? ponds.first['id']?.toString(),
+                    dropdownColor: AppColors.surfaceElevated,
+                    style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      labelText: isTelugu ? 'చెరువును ఎంచుకోండి' : 'Target Pond',
+                      filled: true,
+                      fillColor: AppColors.surfaceElevated,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: AppColors.cardBorder),
+                      ),
+                    ),
+                    items: ponds.map((p) {
+                      final id = p['id']?.toString() ?? '1';
+                      final name = p['name']?.toString() ?? 'Pond $id';
+                      final area = p['areaHa'] ?? 1.0;
+                      return DropdownMenuItem<String>(
+                        value: id,
+                        child: Text('$name ($area Ha)'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) _onPondSelected(val);
+                    },
+                  ),
+                  const SizedBox(height: 14),
+                ],
 
                 Row(
                   children: [

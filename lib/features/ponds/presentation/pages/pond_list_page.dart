@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -10,11 +10,64 @@ import '../../../../core/providers/app_providers.dart';
 class PondListPage extends ConsumerWidget {
   const PondListPage({super.key});
 
+  void _loadDemoPonds(WidgetRef ref) {
+    ref.read(pondListProvider.notifier).state = [
+      {
+        'id': '1',
+        'name': 'Pond 1 (North Field)',
+        'areaHa': 1.2,
+        'stockingDensity': 50,
+        'doc': 52,
+        'species': 'L. vannamei',
+        'initialAbw': 0.02,
+        'status': 'Optimal',
+        'created_at': DateTime.now().subtract(const Duration(days: 52)).toIso8601String(),
+      },
+      {
+        'id': '2',
+        'name': 'Pond 2 (South Field)',
+        'areaHa': 1.0,
+        'stockingDensity': 45,
+        'doc': 38,
+        'species': 'L. vannamei',
+        'initialAbw': 0.02,
+        'status': 'Optimal',
+        'created_at': DateTime.now().subtract(const Duration(days: 38)).toIso8601String(),
+      },
+    ];
+
+    ref.read(waterLogsProvider.notifier).state = [
+      {
+        'id': 'log_init_1',
+        'pond_id': '1',
+        'ph': 7.85,
+        'dissolved_oxygen': 4.8,
+        'salinity': 18.0,
+        'temperature': 28.5,
+        'ammonia': 0.04,
+        'feed_kg': 25.0,
+        'timestamp': DateTime.now().subtract(const Duration(hours: 3)).toIso8601String(),
+      },
+      {
+        'id': 'log_init_2',
+        'pond_id': '2',
+        'ph': 7.95,
+        'dissolved_oxygen': 5.1,
+        'salinity': 17.5,
+        'temperature': 28.0,
+        'ammonia': 0.02,
+        'feed_kg': 22.0,
+        'timestamp': DateTime.now().subtract(const Duration(hours: 4)).toIso8601String(),
+      },
+    ];
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final ponds = ref.watch(pondListProvider);
+    final waterLogs = ref.watch(waterLogsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -84,19 +137,39 @@ class PondListPage extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: AppColors.background,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      ),
-                      onPressed: () => context.push('/add-pond'),
-                      icon: const Icon(Icons.add),
-                      label: Text(
-                        isTelugu ? 'మొదటి చెరువును జోడించండి' : 'Add First Pond',
-                        style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: AppColors.background,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => context.push('/add-pond'),
+                          icon: const Icon(Icons.add),
+                          label: Text(
+                            isTelugu ? 'చెరువును జోడించండి' : 'Add Pond',
+                            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.secondary,
+                            side: const BorderSide(color: AppColors.secondary),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => _loadDemoPonds(ref),
+                          icon: const Icon(Icons.science_outlined),
+                          label: Text(
+                            'Load Demo Data',
+                            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -112,7 +185,27 @@ class PondListPage extends ConsumerWidget {
                 final doc = pond['doc'] ?? 45;
                 final area = pond['areaHa'] ?? 1.0;
                 final density = pond['stockingDensity'] ?? 45;
-                final status = pond['status']?.toString() ?? 'Optimal';
+
+                // Find latest telemetry log for this pond
+                final pondLogs = waterLogs.where((l) => l['pond_id']?.toString() == pondId).toList();
+                final latestLog = pondLogs.isNotEmpty ? pondLogs.first : null;
+
+                String status = 'Optimal';
+                Color statusColor = AppColors.secondary;
+
+                if (latestLog != null) {
+                  final doVal = (latestLog['dissolved_oxygen'] as num?)?.toDouble() ?? 5.0;
+                  final phVal = (latestLog['ph'] as num?)?.toDouble() ?? 7.8;
+                  final nh3Val = (latestLog['ammonia'] as num?)?.toDouble() ?? 0.02;
+
+                  if (doVal < 3.5 || phVal < 7.0 || phVal > 9.0 || nh3Val > 0.1) {
+                    status = 'Urgent';
+                    statusColor = AppColors.alertUrgent;
+                  } else if (doVal < 4.0 || phVal < 7.5 || phVal > 8.5 || nh3Val > 0.05) {
+                    status = 'Watch';
+                    statusColor = AppColors.alertWatch;
+                  }
+                }
 
                 return Card(
                   color: AppColors.surface,
@@ -156,26 +249,16 @@ class PondListPage extends ConsumerWidget {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: status == 'Urgent'
-                                      ? AppColors.alertUrgent.withValues(alpha: 0.15)
-                                      : (status == 'Watch'
-                                          ? AppColors.alertWatch.withValues(alpha: 0.15)
-                                          : AppColors.secondary.withValues(alpha: 0.15)),
+                                  color: statusColor.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                    color: status == 'Urgent'
-                                        ? AppColors.alertUrgent
-                                        : (status == 'Watch' ? AppColors.alertWatch : AppColors.secondary),
-                                  ),
+                                  border: Border.all(color: statusColor),
                                 ),
                                 child: Text(
                                   status,
                                   style: GoogleFonts.spaceGrotesk(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: status == 'Urgent'
-                                        ? AppColors.alertUrgent
-                                        : (status == 'Watch' ? AppColors.alertWatch : AppColors.secondary),
+                                    color: statusColor,
                                   ),
                                 ),
                               ),
@@ -197,7 +280,9 @@ class PondListPage extends ConsumerWidget {
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
-                                'DO: 4.8 mg/L • pH: 7.9 • Salinity: 18 ppt',
+                                latestLog != null
+                                    ? 'DO: ${latestLog['dissolved_oxygen']} mg/L • pH: ${latestLog['ph']} • Salinity: ${latestLog['salinity']} ppt'
+                                    : 'No telemetry logged yet • Tap to log water',
                                 style: GoogleFonts.outfit(
                                   fontSize: 12,
                                   color: AppColors.textSecondary,

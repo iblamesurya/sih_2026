@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -16,20 +16,28 @@ class TelemetryLoggingPage extends ConsumerStatefulWidget {
 class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
   final _formKey = GlobalKey<FormState>();
 
-  final _pondController = TextEditingController(text: '1');
-  final _phController = TextEditingController();
-  final _doController = TextEditingController();
-  final _salinityController = TextEditingController();
-  final _tempController = TextEditingController();
-  final _ammoniaController = TextEditingController();
-  final _feedController = TextEditingController();
+  String _selectedPondId = '1';
+  final _phController = TextEditingController(text: '7.85');
+  final _doController = TextEditingController(text: '4.8');
+  final _salinityController = TextEditingController(text: '18.0');
+  final _tempController = TextEditingController(text: '28.5');
+  final _ammoniaController = TextEditingController(text: '0.04');
+  final _feedController = TextEditingController(text: '25.0');
   final _voiceInputController = TextEditingController();
 
   String? _detectedTeluguPhrase;
 
   @override
+  void initState() {
+    super.initState();
+    final ponds = ref.read(pondListProvider);
+    if (ponds.isNotEmpty) {
+      _selectedPondId = ponds.first['id']?.toString() ?? '1';
+    }
+  }
+
+  @override
   void dispose() {
-    _pondController.dispose();
     _phController.dispose();
     _doController.dispose();
     _salinityController.dispose();
@@ -47,7 +55,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
     setState(() {
       _detectedTeluguPhrase = transcript;
       if (parsed.pondIndex != null) {
-        _pondController.text = parsed.pondIndex.toString();
+        _selectedPondId = parsed.pondIndex.toString();
       }
       if (parsed.ph != null) {
         _phController.text = parsed.ph.toString();
@@ -83,35 +91,46 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
   Future<void> _submitTelemetry() async {
     final alertSystem = ref.read(alertSystemProvider);
     final offlineSync = ref.read(offlineSyncProvider);
+    final currentLogs = ref.read(waterLogsProvider);
 
-    final ph = double.tryParse(_phController.text);
-    final doLevel = double.tryParse(_doController.text);
-    final ammonia = double.tryParse(_ammoniaController.text);
+    final ph = double.tryParse(_phController.text) ?? 7.8;
+    final doLevel = double.tryParse(_doController.text) ?? 4.8;
+    final ammonia = double.tryParse(_ammoniaController.text) ?? 0.04;
+    final salinity = double.tryParse(_salinityController.text) ?? 18.0;
+    final temp = double.tryParse(_tempController.text) ?? 28.5;
+    final feedKg = double.tryParse(_feedController.text) ?? 25.0;
 
-    // Evaluate water parameters
+    // Evaluate water parameters for critical/watch threshold breaches
     final alerts = alertSystem.evaluateParameters(
       ph: ph,
       dissolvedOxygen: doLevel,
       ammonia: ammonia,
     );
 
-    // Update alerts in state
+    // Update active alerts in state
     ref.read(alertsProvider.notifier).state = alerts;
 
-    // Enqueue mutation
-    final mutation = {
-      'type': 'INSERT_WATER_LOG',
-      'pond_id': _pondController.text,
+    // Construct telemetry log
+    final newLog = {
+      'id': 'log_${DateTime.now().millisecondsSinceEpoch}',
+      'pond_id': _selectedPondId,
       'ph': ph,
       'dissolved_oxygen': doLevel,
-      'salinity': double.tryParse(_salinityController.text),
-      'temperature': double.tryParse(_tempController.text),
+      'salinity': salinity,
+      'temperature': temp,
       'ammonia': ammonia,
-      'feed_kg': double.tryParse(_feedController.text),
+      'feed_kg': feedKg,
       'timestamp': DateTime.now().toIso8601String(),
     };
 
-    await offlineSync.enqueue(mutation);
+    // Update in-memory state so Ponds and Home pages update reactively
+    ref.read(waterLogsProvider.notifier).state = [newLog, ...currentLogs];
+
+    // Enqueue mutation for persistent Supabase sync
+    await offlineSync.enqueue({
+      'type': 'INSERT_WATER_LOG',
+      'log_data': newLog,
+    });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -119,7 +138,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
           content: Text(
             alerts.any((a) => a.isUrgent)
                 ? 'Logged with Critical Water Quality Warning!'
-                : 'Water telemetry logged successfully (Synced/Queued)!',
+                : 'Water telemetry logged successfully (Updated & Synced)!',
             style: GoogleFonts.outfit(color: Colors.white),
           ),
           backgroundColor: alerts.any((a) => a.isUrgent)
@@ -135,6 +154,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
   Widget build(BuildContext context) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
+    final ponds = ref.watch(pondListProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -224,8 +244,8 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                         ),
                         const SizedBox(width: 8),
                         _VoiceSampleChip(
-                          label: 'చెరువు 3: మేత 35 కిలోలు',
-                          onTap: () => _parseVoice('ఉదయం 3వ చెరువులో మేత 35 కిలోలు వేశాము'),
+                          label: 'చెరువు 1: మేత 35 కిలోలు',
+                          onTap: () => _parseVoice('ఉదయం 1వ చెరువులో మేత 35 కిలోలు వేశాము'),
                         ),
                       ],
                     ),
@@ -266,18 +286,48 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
             ),
             const SizedBox(height: 12),
 
+            // Target Pond Selector Dropdown
+            DropdownButtonFormField<String>(
+              value: _selectedPondId,
+              dropdownColor: AppColors.surfaceElevated,
+              style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary, fontSize: 14),
+              decoration: InputDecoration(
+                labelText: isTelugu ? 'సంబంధిత చెరువు' : 'Target Pond',
+                filled: true,
+                fillColor: AppColors.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.cardBorder),
+                ),
+              ),
+              items: ponds.isNotEmpty
+                  ? ponds.map((p) {
+                      final id = p['id']?.toString() ?? '1';
+                      final name = p['name']?.toString() ?? 'Pond $id';
+                      return DropdownMenuItem<String>(
+                        value: id,
+                        child: Text(name),
+                      );
+                    }).toList()
+                  : const [
+                      DropdownMenuItem<String>(
+                        value: '1',
+                        child: Text('Pond 1'),
+                      ),
+                      DropdownMenuItem<String>(
+                        value: '2',
+                        child: Text('Pond 2'),
+                      ),
+                    ],
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedPondId = val);
+              },
+            ),
+            const SizedBox(height: 12),
+
             // Form inputs
             Row(
               children: [
-                Expanded(
-                  child: _InputField(
-                    controller: _pondController,
-                    label: isTelugu ? 'చెరువు నంబర్' : 'Pond #',
-                    hintText: '1, 2, 3...',
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(width: 12),
                 Expanded(
                   child: _InputField(
                     controller: _phController,
@@ -286,12 +336,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            Row(
-              children: [
+                const SizedBox(width: 12),
                 Expanded(
                   child: _InputField(
                     controller: _doController,
@@ -300,12 +345,26 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                 ),
-                const SizedBox(width: 12),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
                 Expanded(
                   child: _InputField(
                     controller: _salinityController,
                     label: 'Salinity (ppt)',
                     hintText: '10 - 25 ppt',
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _InputField(
+                    controller: _tempController,
+                    label: 'Temperature (°C)',
+                    hintText: '26 - 32 °C',
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                 ),
@@ -317,30 +376,22 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
               children: [
                 Expanded(
                   child: _InputField(
-                    controller: _tempController,
-                    label: 'Temperature (°C)',
-                    hintText: '26 - 32 °C',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _InputField(
                     controller: _ammoniaController,
                     label: 'Ammonia NH3 (mg/L)',
                     hintText: '< 0.1 mg/L',
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _InputField(
+                    controller: _feedController,
+                    label: isTelugu ? 'మేత పరిమాణం (kg)' : 'Feed Applied (kg)',
+                    hintText: '25.0',
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 12),
-
-            _InputField(
-              controller: _feedController,
-              label: isTelugu ? 'మేత పరిమాణం (kg)' : 'Feed Applied (kg)',
-              hintText: '25.0',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 24),
 

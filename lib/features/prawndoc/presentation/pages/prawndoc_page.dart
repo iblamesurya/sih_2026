@@ -1,7 +1,8 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
@@ -9,6 +10,7 @@ import '../../../../core/services/prawndoc_ai_service.dart';
 import '../../../../core/services/subscription_service.dart';
 
 /// PrawnDoc AI Vision Disease Diagnostic Page (Tab 3).
+/// Supports live Camera capture, Photo Library selection, and sample presets.
 class PrawnDocPage extends ConsumerStatefulWidget {
   const PrawnDocPage({super.key});
 
@@ -18,20 +20,23 @@ class PrawnDocPage extends ConsumerStatefulWidget {
 
 class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
   final _notesController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
 
-  final String _selectedPond = '1';
-  String _selectedSampleDisease = 'White Spot Syndrome Virus (WSSV)';
+  String? _selectedPondId;
+  Uint8List? _selectedImageBytes;
+  String? _selectedImageName;
   bool _isAnalyzing = false;
   DiagnosticResult? _diagnosisResult;
 
+  // Preset sample specimens for testing without a live shrimp
   final Map<String, List<int>> _sampleImages = {
-    'White Spot Syndrome Virus (WSSV)': List.generate(100, (i) => (i * 7) % 256),
-    'Acute Hepatopancreatic Necrosis (AHPND)': List.generate(100, (i) => (i * 13) % 256),
-    'Enterocytozoon hepatopenaei (EHP)': List.generate(100, (i) => (i * 19) % 256),
+    'White Spot Syndrome (WSSV)': List.generate(100, (i) => (i * 7) % 256),
+    'AHPND / Early Mortality': List.generate(100, (i) => (i * 13) % 256),
+    'EHP Microsporidian Parasite': List.generate(100, (i) => (i * 19) % 256),
     'White Feces Syndrome (WFS)': List.generate(100, (i) => (i * 23) % 256),
     'Black Gill Disease': List.generate(100, (i) => (i * 31) % 256),
-    'Infectious Myonecrosis Virus (IMNV)': List.generate(100, (i) => (i * 37) % 256),
-    'Healthy Specimen': List.generate(100, (i) => (i * 41) % 256),
+    'Infectious Myonecrosis (IMNV)': List.generate(100, (i) => (i * 37) % 256),
+    'Healthy Specimen (No Lesions)': List.generate(100, (i) => (i * 41) % 256),
   };
 
   @override
@@ -40,25 +45,90 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
     super.dispose();
   }
 
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? file = await _picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        setState(() {
+          _selectedImageBytes = bytes;
+          _selectedImageName = file.name;
+          _diagnosisResult = null; // Reset previous result on new image
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to access camera/gallery: $e'),
+            backgroundColor: AppColors.alertUrgent,
+          ),
+        );
+      }
+    }
+  }
+
+  void _loadSamplePreset(String key) {
+    final bytes = Uint8List.fromList(_sampleImages[key] ?? [0xFF, 0xD8, 0xFF, 0xE0]);
+    setState(() {
+      _selectedImageBytes = bytes;
+      _selectedImageName = 'Preset: $key';
+      _diagnosisResult = null;
+    });
+  }
+
   Future<void> _runDiagnosis() async {
+    if (_selectedImageBytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please take a photo or select an image first!'),
+          backgroundColor: AppColors.alertWatch,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isAnalyzing = true);
 
     final prawnDocService = ref.read(prawnDocAiProvider);
     final subscriptionTier = ref.read(currentSubscriptionTierProvider);
-    final imageBytes = Uint8List.fromList(
-      _sampleImages[_selectedSampleDisease] ?? [0xFF, 0xD8, 0xFF, 0xE0, 0x00],
-    );
-
     final scans = ref.read(diseaseScansProvider);
+    final waterLogs = ref.read(waterLogsProvider);
+
+    // Extract real RAG telemetry from selected pond if available
+    double ph = 7.85;
+    double dissolvedOxygen = 4.8;
+    double salinity = 18.0;
+    double ammonia = 0.04;
+    double temperature = 28.5;
+
+    if (_selectedPondId != null) {
+      final pondLogs = waterLogs.where((l) => l['pond_id']?.toString() == _selectedPondId).toList();
+      if (pondLogs.isNotEmpty) {
+        final latest = pondLogs.first;
+        ph = (latest['ph'] as num?)?.toDouble() ?? ph;
+        dissolvedOxygen = (latest['dissolved_oxygen'] as num?)?.toDouble() ?? dissolvedOxygen;
+        salinity = (latest['salinity'] as num?)?.toDouble() ?? salinity;
+        ammonia = (latest['ammonia'] as num?)?.toDouble() ?? ammonia;
+        temperature = (latest['temperature'] as num?)?.toDouble() ?? temperature;
+      }
+    }
+
     try {
       final result = await prawnDocService.analyzeShrimpImage(
-        imageBytes: imageBytes,
+        imageBytes: _selectedImageBytes!,
         farmerNotes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
-        ph: 7.8,
-        dissolvedOxygen: 4.5,
-        salinity: 18.0,
-        ammonia: 0.04,
-        temperature: 28.5,
+        ph: ph,
+        dissolvedOxygen: dissolvedOxygen,
+        salinity: salinity,
+        ammonia: ammonia,
+        temperature: temperature,
         currentScansToday: scans.length,
         isPro: subscriptionTier == SubscriptionTier.pro,
       );
@@ -68,17 +138,26 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
         _isAnalyzing = false;
       });
 
-      // Record to scans provider
-      ref.read(diseaseScansProvider.notifier).state = [
-        {
-          'disease': result.diseaseName,
-          'severity': result.severity,
-          'confidence': result.confidence,
-          'description': result.description,
-          'scanned_at': DateTime.now().toIso8601String(),
-        },
-        ...scans,
-      ];
+      // Record to scans provider and offline queue
+      final scanRecord = {
+        'id': 'scan_${DateTime.now().millisecondsSinceEpoch}',
+        'pond_id': _selectedPondId ?? 'unassigned',
+        'disease': result.diseaseName,
+        'severity': result.severity,
+        'confidence': result.confidence,
+        'description': result.description,
+        'immediate_action': result.immediateAction,
+        'telugu_summary': result.teluguSummary,
+        'scanned_at': DateTime.now().toIso8601String(),
+      };
+
+      ref.read(diseaseScansProvider.notifier).state = [scanRecord, ...scans];
+
+      final offlineSync = ref.read(offlineSyncProvider);
+      await offlineSync.enqueue({
+        'type': 'INSERT_DISEASE_SCAN',
+        'scan_data': scanRecord,
+      });
     } catch (e) {
       setState(() => _isAnalyzing = false);
       if (mounted) {
@@ -96,6 +175,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
   Widget build(BuildContext context) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
+    final ponds = ref.watch(pondListProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -114,7 +194,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Scan Capture Hero Card
+          // Image Capture Section
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -143,7 +223,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '768px • EXIF Strip',
+                        'Multimodal Gemini 2.5 Vision',
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
@@ -153,17 +233,150 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 14),
+
+                // Image Preview or Placeholder
+                if (_selectedImageBytes != null)
+                  Container(
+                    width: double.infinity,
+                    height: 200,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.primary),
+                    ),
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: _selectedImageBytes!.length > 500
+                                ? Image.memory(
+                                    _selectedImageBytes!,
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    height: 200,
+                                  )
+                                : Container(
+                                    color: AppColors.surfaceElevated,
+                                    child: Center(
+                                      child: Column(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.biotech, size: 48, color: AppColors.primary),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            _selectedImageName ?? 'Sample Specimen Loaded',
+                                            style: GoogleFonts.spaceGrotesk(
+                                              color: AppColors.textPrimary,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: CircleAvatar(
+                            backgroundColor: Colors.black54,
+                            radius: 16,
+                            child: IconButton(
+                              icon: const Icon(Icons.close, size: 16, color: Colors.white),
+                              onPressed: () {
+                                setState(() {
+                                  _selectedImageBytes = null;
+                                  _selectedImageName = null;
+                                });
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.cardBorder, style: BorderStyle.solid),
+                    ),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.camera_alt_outlined, size: 40, color: AppColors.textTertiary),
+                        const SizedBox(height: 8),
+                        Text(
+                          isTelugu ? 'ఫోటో తీయండి లేదా గ్యాలరీ నుండి ఎంచుకోండి' : 'Capture shrimp photo or select from gallery',
+                          style: GoogleFonts.outfit(fontSize: 13, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Camera & Gallery Buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.background,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () => _pickImage(ImageSource.camera),
+                        icon: const Icon(Icons.camera_alt, size: 18),
+                        label: Text(
+                          isTelugu ? 'కెమెరా' : 'Take Photo',
+                          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.surfaceElevated,
+                          foregroundColor: AppColors.textPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(color: AppColors.cardBorder),
+                          ),
+                        ),
+                        onPressed: () => _pickImage(ImageSource.gallery),
+                        icon: const Icon(Icons.photo_library, size: 18),
+                        label: Text(
+                          isTelugu ? 'గ్యాలరీ' : 'Choose Gallery',
+                          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
 
-                // Specimen Selector Dropdown
+                // Sample Preset Dropdown for Fast Testing
                 DropdownButtonFormField<String>(
-                  initialValue: _selectedSampleDisease,
+                  value: null,
+                  hint: Text(
+                    isTelugu ? 'లేదా పరీక్ష కోసం నమూనాను ఎంచుకోండి' : 'Or load sample pathology preset for testing',
+                    style: GoogleFonts.outfit(color: AppColors.textTertiary, fontSize: 12),
+                  ),
                   dropdownColor: AppColors.surfaceElevated,
                   style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary, fontSize: 13),
                   decoration: InputDecoration(
-                    labelText: isTelugu ? 'నమూనా లక్షణాలు' : 'Sample Pathology Preset',
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: AppColors.cardBorder),
@@ -173,8 +386,44 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                       .map((k) => DropdownMenuItem(value: k, child: Text(k)))
                       .toList(),
                   onChanged: (val) {
-                    if (val != null) setState(() => _selectedSampleDisease = val);
+                    if (val != null) _loadSamplePreset(val);
                   },
+                ),
+                const SizedBox(height: 14),
+
+                // Target Pond Selector for RAG context
+                DropdownButtonFormField<String>(
+                  value: _selectedPondId,
+                  hint: Text(
+                    isTelugu ? 'చెరువును ఎంచుకోండి (RAG కోసం)' : 'Select Pond for Water RAG Context',
+                    style: GoogleFonts.outfit(color: AppColors.textSecondary, fontSize: 13),
+                  ),
+                  dropdownColor: AppColors.surfaceElevated,
+                  style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    labelText: isTelugu ? 'సంబంధిత చెరువు' : 'Target Pond',
+                    filled: true,
+                    fillColor: AppColors.surfaceElevated,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.cardBorder),
+                    ),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('General Aquaculture Default (Optimal)'),
+                    ),
+                    ...ponds.map((p) {
+                      final id = p['id']?.toString() ?? '1';
+                      final name = p['name']?.toString() ?? 'Pond $id';
+                      return DropdownMenuItem<String>(
+                        value: id,
+                        child: Text(name),
+                      );
+                    }),
+                  ],
+                  onChanged: (val) => setState(() => _selectedPondId = val),
                 ),
                 const SizedBox(height: 12),
 
@@ -184,38 +433,14 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                   maxLines: 2,
                   style: GoogleFonts.outfit(color: AppColors.textPrimary, fontSize: 13),
                   decoration: InputDecoration(
-                    labelText: isTelugu ? 'రైతు గమనికలు / లక్షణాలు' : 'Farmer Clinical Observations',
-                    hintText: 'e.g. Lethargic swimming on pond surface, empty gut, white spots',
+                    labelText: isTelugu ? 'రైతు గమనికలు / లక్షణాలు' : 'Clinical Observations / Notes',
+                    hintText: 'e.g. Lethargic swimming on pond surface, empty gut, white spots on carapace',
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: AppColors.cardBorder),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-
-                // Water Parameter RAG Preview Strip
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceBase,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.cardBorder),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'RAG Context: Pond $_selectedPond',
-                        style: GoogleFonts.spaceGrotesk(fontSize: 11, color: AppColors.primary),
-                      ),
-                      Text(
-                        'DO 4.5 • pH 7.8 • NH3 0.04 • 28.5°C',
-                        style: GoogleFonts.outfit(fontSize: 11, color: AppColors.textSecondary),
-                      ),
-                    ],
                   ),
                 ),
                 const SizedBox(height: 16),

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -17,7 +17,8 @@ class PondDetailPage extends ConsumerWidget {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final ponds = ref.watch(pondListProvider);
-    
+    final allWaterLogs = ref.watch(waterLogsProvider);
+
     final pond = ponds.firstWhere(
       (p) => p['id']?.toString() == pondId,
       orElse: () => {
@@ -32,8 +33,22 @@ class PondDetailPage extends ConsumerWidget {
     );
 
     final pondName = pond['name']?.toString() ?? 'Pond $pondId';
-    final doc = pond['doc'] ?? 52;
-    final area = pond['areaHa'] ?? 1.2;
+    final doc = (pond['doc'] as num?)?.toInt() ?? 52;
+    final area = (pond['areaHa'] as num?)?.toDouble() ?? 1.2;
+    final density = (pond['stockingDensity'] as num?)?.toInt() ?? 50;
+
+    // Filter telemetry logs for this specific pond
+    final pondLogs = allWaterLogs.where((l) => l['pond_id']?.toString() == pondId).toList();
+    final latestLog = pondLogs.isNotEmpty ? pondLogs.first : null;
+
+    final doVal = (latestLog?['dissolved_oxygen'] as num?)?.toDouble() ?? 4.8;
+    final phVal = (latestLog?['ph'] as num?)?.toDouble() ?? 7.85;
+    final salVal = (latestLog?['salinity'] as num?)?.toDouble() ?? 18.0;
+    final nh3Val = (latestLog?['ammonia'] as num?)?.toDouble() ?? 0.04;
+
+    // Biomass estimation
+    final estAbw = doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : 18.5;
+    final estBiomassKg = (area * 10000 * density * 0.85 * estAbw / 1000).round();
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -50,8 +65,9 @@ class PondDetailPage extends ConsumerWidget {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit_outlined, color: AppColors.textSecondary),
-            onPressed: () {},
+            icon: const Icon(Icons.add, color: AppColors.primary),
+            tooltip: 'Log Telemetry',
+            onPressed: () => context.push('/quick-log'),
           ),
         ],
       ),
@@ -105,7 +121,7 @@ class PondDetailPage extends ConsumerWidget {
                         border: Border.all(color: AppColors.secondary),
                       ),
                       child: Text(
-                        'Growth Phase',
+                        doc < 30 ? 'Nursery' : (doc < 80 ? 'Grow-Out' : 'Pre-Harvest'),
                         style: GoogleFonts.spaceGrotesk(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
@@ -128,9 +144,9 @@ class PondDetailPage extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     _PondSubInfo(label: 'Area', value: '$area Ha'),
-                    _PondSubInfo(label: 'Stocking Density', value: '${pond['stockingDensity']} PL/m²'),
-                    _PondSubInfo(label: 'Est. Biomass', value: '3,840 kg'),
-                    _PondSubInfo(label: 'Target ABW', value: '18.5 g'),
+                    _PondSubInfo(label: 'Density', value: '$density PL/m²'),
+                    _PondSubInfo(label: 'Est. Biomass', value: '$estBiomassKg kg'),
+                    _PondSubInfo(label: 'Est. ABW', value: '${estAbw.toStringAsFixed(1)} g'),
                   ],
                 ),
               ],
@@ -138,7 +154,7 @@ class PondDetailPage extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
 
-          // Water Parameter Gauges Section
+          // Water Parameter Gauges Section (Dynamic from latestLog)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -173,37 +189,37 @@ class PondDetailPage extends ConsumerWidget {
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
             childAspectRatio: 1.6,
-            children: const [
+            children: [
               _TelemetryGaugeCard(
                 parameter: 'Dissolved Oxygen',
-                value: '4.8',
+                value: doVal.toStringAsFixed(1),
                 unit: 'mg/L',
-                status: 'Optimal',
-                statusColor: AppColors.secondary,
+                status: doVal >= 4.0 ? 'Optimal' : (doVal >= 3.5 ? 'Watch' : 'Urgent'),
+                statusColor: doVal >= 4.0 ? AppColors.secondary : (doVal >= 3.5 ? AppColors.alertWatch : AppColors.alertUrgent),
                 optimalRange: '> 4.0 mg/L',
               ),
               _TelemetryGaugeCard(
                 parameter: 'pH Level',
-                value: '7.85',
+                value: phVal.toStringAsFixed(2),
                 unit: 'pH',
-                status: 'Optimal',
-                statusColor: AppColors.secondary,
+                status: phVal >= 7.5 && phVal <= 8.5 ? 'Optimal' : 'Watch',
+                statusColor: phVal >= 7.5 && phVal <= 8.5 ? AppColors.secondary : AppColors.alertWatch,
                 optimalRange: '7.5 - 8.5',
               ),
               _TelemetryGaugeCard(
                 parameter: 'Salinity',
-                value: '18.0',
+                value: salVal.toStringAsFixed(1),
                 unit: 'ppt',
-                status: 'Optimal',
-                statusColor: AppColors.secondary,
+                status: salVal >= 10 && salVal <= 25 ? 'Optimal' : 'Watch',
+                statusColor: salVal >= 10 && salVal <= 25 ? AppColors.secondary : AppColors.alertWatch,
                 optimalRange: '10 - 25 ppt',
               ),
               _TelemetryGaugeCard(
                 parameter: 'Total Ammonia',
-                value: '0.04',
+                value: nh3Val.toStringAsFixed(2),
                 unit: 'mg/L',
-                status: 'Optimal',
-                statusColor: AppColors.secondary,
+                status: nh3Val <= 0.05 ? 'Optimal' : (nh3Val <= 0.1 ? 'Watch' : 'Urgent'),
+                statusColor: nh3Val <= 0.05 ? AppColors.secondary : (nh3Val <= 0.1 ? AppColors.alertWatch : AppColors.alertUrgent),
                 optimalRange: '< 0.1 mg/L',
               ),
             ],
@@ -265,7 +281,7 @@ class PondDetailPage extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
 
-          // Recent Water Log History
+          // Recent Water Log History (Dynamic from state)
           Text(
             isTelugu ? 'ఇటీవలి లాగ్‌లు' : 'Recent Telemetry History',
             style: GoogleFonts.spaceGrotesk(
@@ -275,23 +291,62 @@ class PondDetailPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.cardBorder),
+
+          if (pondLogs.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.cardBorder),
+              ),
+              child: Center(
+                child: Column(
+                  children: [
+                    const Icon(Icons.history, color: AppColors.textTertiary, size: 32),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No water readings recorded yet for $pondName.',
+                      style: GoogleFonts.outfit(color: AppColors.textSecondary, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.background,
+                      ),
+                      onPressed: () => context.push('/quick-log'),
+                      child: const Text('Log First Reading'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.cardBorder),
+              ),
+              child: Column(
+                children: pondLogs.take(5).map((log) {
+                  final timeStr = log['timestamp'] != null
+                      ? DateTime.tryParse(log['timestamp'].toString())?.toLocal().toString().substring(5, 16) ?? 'Recent'
+                      : 'Recent';
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: _LogItem(
+                      time: timeStr,
+                      doLevel: '${log['dissolved_oxygen'] ?? 4.8}',
+                      ph: '${log['ph'] ?? 7.8}',
+                      temp: '${log['temperature'] ?? 28.0}°C',
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
-            child: Column(
-              children: [
-                _LogItem(time: 'Today 06:30 AM', doLevel: '4.8', ph: '7.8', temp: '27.5°C'),
-                const Divider(height: 16),
-                _LogItem(time: 'Yesterday 04:30 PM', doLevel: '5.2', ph: '8.1', temp: '29.0°C'),
-                const Divider(height: 16),
-                _LogItem(time: 'Yesterday 06:00 AM', doLevel: '4.4', ph: '7.7', temp: '26.8°C'),
-              ],
-            ),
-          ),
           const SizedBox(height: 30),
         ],
       ),

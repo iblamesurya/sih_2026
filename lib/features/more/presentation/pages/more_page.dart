@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -17,6 +17,13 @@ class MorePage extends ConsumerWidget {
     final isTelugu = locale.languageCode == 'te';
     final subscriptionTier = ref.watch(currentSubscriptionTierProvider);
     final offlineSync = ref.watch(offlineSyncProvider);
+    final user = ref.watch(currentUserProvider);
+    final farm = ref.watch(currentFarmProvider);
+
+    final farmerName = user?['name'] ?? 'Surya Tummala';
+    final phone = user?['phone'] ?? '+91 98765 43210';
+    final farmName = farm?['farmName'] ?? 'Bhimavaram Farm #1';
+    final location = farm?['district'] ?? 'West Godavari';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -35,7 +42,7 @@ class MorePage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Farmer Profile Header Card
+          // Farmer Profile Header Card (Dynamic from State)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -68,12 +75,16 @@ class MorePage extends ConsumerWidget {
                     children: [
                       Row(
                         children: [
-                          Text(
-                            'Surya Tummala',
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
+                          Flexible(
+                            child: Text(
+                              farmerName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -100,7 +111,9 @@ class MorePage extends ConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '+91 98765 43210 • Bhimavaram Farm #1',
+                        '$phone • $farmName ($location)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.outfit(
                           fontSize: 12,
                           color: AppColors.textSecondary,

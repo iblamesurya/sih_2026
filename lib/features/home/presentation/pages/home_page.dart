@@ -6,18 +6,54 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
 import '../../../../core/services/subscription_service.dart';
+import '../../../../core/services/weather_service.dart';
 
 /// Main Home / Dashboard page of PrawnGuard.ai (Tab 0).
-class HomePage extends ConsumerWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends ConsumerState<HomePage> {
+  WeatherData? _weather;
+  HypoxiaAdvisory? _hypoxia;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDashboardWeather();
+    });
+  }
+
+  Future<void> _loadDashboardWeather() async {
+    try {
+      final weatherService = ref.read(weatherServiceProvider);
+      final weather = await weatherService.fetchWeather(lat: 16.5449, lon: 81.5212);
+      final hypoxia = weatherService.evaluateHypoxiaRisk(weather);
+      if (mounted) {
+        setState(() {
+          _weather = weather;
+          _hypoxia = hypoxia;
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final alerts = ref.watch(alertsProvider);
     final ponds = ref.watch(pondListProvider);
+    final farm = ref.watch(currentFarmProvider);
+    final feedPlan = ref.watch(activeFeedPlanProvider);
     final subscriptionTier = ref.watch(currentSubscriptionTierProvider);
+
+    final farmName = farm?['farmName'] ?? (isTelugu ? 'నా ఆక్వాకల్చర్ ఫార్మ్' : 'My Aquaculture Farm');
+    final farmLocation = farm?['district'] ?? 'Coastal Andhra Pradesh';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -35,25 +71,31 @@ class HomePage extends ConsumerWidget {
               child: const Icon(Icons.water_drop, color: AppColors.primary, size: 20),
             ),
             const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'PrawnGuard.ai',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'PrawnGuard.ai',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
-                ),
-                Text(
-                  'Bhimavaram, West Godavari',
-                  style: GoogleFonts.outfit(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
+                  Text(
+                    farm != null ? '$farmName • $farmLocation' : farmLocation,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.outfit(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -152,7 +194,7 @@ class HomePage extends ConsumerWidget {
               ),
             ),
 
-          // Weather & Hypoxia Advisory Card
+          // Live Weather & Hypoxia Advisory Card
           InkWell(
             onTap: () => context.push('/weather'),
             borderRadius: BorderRadius.circular(16),
@@ -170,43 +212,53 @@ class HomePage extends ConsumerWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.cloud_queue, color: AppColors.primary, size: 18),
-                          const SizedBox(width: 6),
-                          Text(
-                            isTelugu ? 'వాతావరణ నివేదిక' : 'Aquaculture Weather',
-                            style: GoogleFonts.spaceGrotesk(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimary,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.cloud_queue, color: AppColors.primary, size: 18),
+                            const SizedBox(width: 6),
+                            Text(
+                              isTelugu ? 'వాతావరణ నివేదిక' : 'Aquaculture Weather & Hypoxia',
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textPrimary,
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _weather != null
+                              ? '${_weather!.temperature.toStringAsFixed(1)}°C • ${_weather!.humidity}% Humidity • ${_weather!.description}'
+                              : '29.5°C • 76% Humidity • Live Telemetry Active',
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '29.4°C • 78% Humidity • Overcast',
-                        style: GoogleFonts.outfit(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isTelugu
-                          ? 'హైపోక్సియా ప్రమాదం: తక్కువ (ఏరేటర్లు సరిపోతాయి)'
-                          : 'Hypoxia Risk: Low • Aeration optimal',
-                        style: GoogleFonts.outfit(
-                          fontSize: 12,
-                          color: AppColors.secondary,
-                          fontWeight: FontWeight.w500,
+                        const SizedBox(height: 4),
+                        Text(
+                          _hypoxia != null
+                              ? 'Hypoxia Risk: ${_hypoxia!.riskLevel.toUpperCase()} • ${_hypoxia!.actions.isNotEmpty ? _hypoxia!.actions.first : _hypoxia!.advisorySummary}'
+                              : (isTelugu
+                                  ? 'హైపోక్సియా ప్రమాదం: తక్కువ (ఏరేటర్లు సరిపోతాయి)'
+                                  : 'Hypoxia Risk: Low • Standard aeration optimal'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            color: _hypoxia?.isHighRisk == true
+                                ? AppColors.alertUrgent
+                                : AppColors.secondary,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const Icon(Icons.chevron_right, color: AppColors.textTertiary),
                 ],
@@ -251,7 +303,7 @@ class HomePage extends ConsumerWidget {
                 icon: Icons.biotech,
                 iconColor: AppColors.alertWatch,
                 title: isTelugu ? 'రొయ్య డాక్టర్' : 'PrawnDoc Vision',
-                subtitle: isTelugu ? '12 వ్యాధుల స్కానింగ్' : 'AI Disease Scan',
+                subtitle: isTelugu ? 'కెమెరా AI స్కాన్' : 'Camera Disease Scan',
                 onTap: () => context.go('/prawndoc'),
               ),
               _QuickActionCard(
@@ -323,18 +375,86 @@ class HomePage extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.background,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () => context.push('/add-pond'),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: Text(
-                      isTelugu ? 'చెరువును జోడించండి' : 'Add Pond',
-                      style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.background,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () => context.push('/add-pond'),
+                        icon: const Icon(Icons.add, size: 18),
+                        label: Text(
+                          isTelugu ? 'చెరువును జోడించండి' : 'Add Pond',
+                          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.secondary,
+                          side: const BorderSide(color: AppColors.secondary),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          ref.read(pondListProvider.notifier).state = [
+                            {
+                              'id': '1',
+                              'name': 'Pond 1 (North Field)',
+                              'areaHa': 1.2,
+                              'stockingDensity': 50,
+                              'doc': 52,
+                              'species': 'L. vannamei',
+                              'initialAbw': 0.02,
+                              'status': 'Optimal',
+                              'created_at': DateTime.now().subtract(const Duration(days: 52)).toIso8601String(),
+                            },
+                            {
+                              'id': '2',
+                              'name': 'Pond 2 (South Field)',
+                              'areaHa': 1.0,
+                              'stockingDensity': 45,
+                              'doc': 38,
+                              'species': 'L. vannamei',
+                              'initialAbw': 0.02,
+                              'status': 'Optimal',
+                              'created_at': DateTime.now().subtract(const Duration(days: 38)).toIso8601String(),
+                            },
+                          ];
+                          ref.read(waterLogsProvider.notifier).state = [
+                            {
+                              'id': 'log_init_1',
+                              'pond_id': '1',
+                              'ph': 7.85,
+                              'dissolved_oxygen': 4.8,
+                              'salinity': 18.0,
+                              'temperature': 28.5,
+                              'ammonia': 0.04,
+                              'feed_kg': 25.0,
+                              'timestamp': DateTime.now().subtract(const Duration(hours: 3)).toIso8601String(),
+                            },
+                            {
+                              'id': 'log_init_2',
+                              'pond_id': '2',
+                              'ph': 7.95,
+                              'dissolved_oxygen': 5.1,
+                              'salinity': 17.5,
+                              'temperature': 28.0,
+                              'ammonia': 0.02,
+                              'feed_kg': 22.0,
+                              'timestamp': DateTime.now().subtract(const Duration(hours: 4)).toIso8601String(),
+                            },
+                          ];
+                        },
+                        icon: const Icon(Icons.science_outlined, size: 16),
+                        label: Text(
+                          'Load Demo Farm',
+                          style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -348,46 +468,49 @@ class HomePage extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppColors.cardBorder),
                   ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
+                  child: InkWell(
+                    onTap: () => context.push('/pond/${pond['id']}'),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.water, color: AppColors.primary, size: 20),
                         ),
-                        child: const Icon(Icons.water, color: AppColors.primary, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              pond['name']?.toString() ?? 'Pond ${pond['id']}',
-                              style: GoogleFonts.spaceGrotesk(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.textPrimary,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                pond['name']?.toString() ?? 'Pond ${pond['id']}',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
                               ),
-                            ),
-                            Text(
-                              'DOC: ${pond['doc'] ?? 45} • Area: ${pond['areaHa'] ?? 1.0} Ha • ${pond['species'] ?? 'L. vannamei'}',
-                              style: GoogleFonts.outfit(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
+                              Text(
+                                'DOC: ${pond['doc'] ?? 45} • Area: ${pond['areaHa'] ?? 1.0} Ha • ${pond['species'] ?? 'L. vannamei'}',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      const Icon(Icons.chevron_right, color: AppColors.textTertiary),
-                    ],
+                        const Icon(Icons.chevron_right, color: AppColors.textTertiary),
+                      ],
+                    ),
                   ),
                 )),
           const SizedBox(height: 20),
 
-          // Daily 4-Meal Schedule Tracker Card
+          // Daily 4-Meal Schedule Tracker Card (Connected to activeFeedPlanProvider)
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -409,35 +532,51 @@ class HomePage extends ConsumerWidget {
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.secondary.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Bio-Energetics',
-                        style: GoogleFonts.spaceGrotesk(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.secondary,
+                    InkWell(
+                      onTap: () => context.go('/feed'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.secondary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          feedPlan != null ? '${feedPlan.adjustedDailyFeedKg.toStringAsFixed(1)} kg Total' : 'Calculate Feed',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.secondary,
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _MealPill(time: '06:00 AM', share: '20%', isCompleted: true),
-                    const SizedBox(width: 8),
-                    _MealPill(time: '11:00 AM', share: '30%', isCompleted: true),
-                    const SizedBox(width: 8),
-                    _MealPill(time: '04:00 PM', share: '30%', isCompleted: false),
-                    const SizedBox(width: 8),
-                    _MealPill(time: '09:00 PM', share: '20%', isCompleted: false),
-                  ],
-                ),
+                if (feedPlan != null)
+                  Row(
+                    children: [
+                      _MealPill(time: '06:00 AM', share: '${feedPlan.meal1Kg.toStringAsFixed(1)} kg (20%)', isCompleted: true),
+                      const SizedBox(width: 8),
+                      _MealPill(time: '11:00 AM', share: '${feedPlan.meal2Kg.toStringAsFixed(1)} kg (30%)', isCompleted: true),
+                      const SizedBox(width: 8),
+                      _MealPill(time: '04:00 PM', share: '${feedPlan.meal3Kg.toStringAsFixed(1)} kg (30%)', isCompleted: false),
+                      const SizedBox(width: 8),
+                      _MealPill(time: '09:00 PM', share: '${feedPlan.meal4Kg.toStringAsFixed(1)} kg (20%)', isCompleted: false),
+                    ],
+                  )
+                else
+                  Row(
+                    children: const [
+                      _MealPill(time: '06:00 AM', share: '20%', isCompleted: false),
+                      SizedBox(width: 8),
+                      _MealPill(time: '11:00 AM', share: '30%', isCompleted: false),
+                      SizedBox(width: 8),
+                      _MealPill(time: '04:00 PM', share: '30%', isCompleted: false),
+                      SizedBox(width: 8),
+                      _MealPill(time: '09:00 PM', share: '20%', isCompleted: false),
+                    ],
+                  ),
               ],
             ),
           ),
@@ -550,6 +689,8 @@ class _MealPill extends StatelessWidget {
             ),
             Text(
               share,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.outfit(
                 fontSize: 9,
                 color: isCompleted ? AppColors.secondary : AppColors.textTertiary,
