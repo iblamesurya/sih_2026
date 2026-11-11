@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers/app_providers.dart';
@@ -48,7 +49,23 @@ class _PrawnGuardAppState extends ConsumerState<PrawnGuardApp> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      
+      // Proactive Counter-REA & RASP Security Posture Check
+      try {
+        final security = ref.read(antiReverseEngineeringProvider);
+        final assessment = await security.evaluateSecurityPosture(
+          isDemoMode: kDebugMode,
+        );
+        if (assessment.isCompromised) {
+          LoggerService.warning(
+            'Security threat detected by RASP shield: ${assessment.detectedThreats.map((t) => t.name).toList()}',
+            tag: 'SECURITY',
+          );
+        }
+      } catch (_) {}
+
       if (!mounted) return;
       final hydration = ref.read(dataHydrationServiceProvider);
       hydration.hydrateAll(ref);
