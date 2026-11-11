@@ -192,6 +192,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
 
       if (file != null) {
         final bytes = await file.readAsBytes();
+        if (!mounted) return;
         setState(() {
           _selectedImageBytes = bytes;
           _selectedImageName = file.name;
@@ -318,6 +319,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
         isPro: subscriptionTier == SubscriptionTier.pro,
       );
 
+      if (!mounted) return;
       setState(() {
         _diagnosisResult = result;
         _isAnalyzing = false;
@@ -349,15 +351,14 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
           .refreshPendingSyncCount(ref, offlineSync: offlineSync);
       await ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isAnalyzing = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Diagnostic scan error: $e'),
-            backgroundColor: AppColors.alertUrgent,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Diagnostic scan error: $e'),
+          backgroundColor: AppColors.alertUrgent,
+        ),
+      );
     }
   }
 

@@ -127,6 +127,17 @@ export default function Announcements() {
     };
   }, []);
 
+  // Escape key handler for modal accessibility
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && showModal) {
+        setShowModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showModal]);
+
   const handleCreateAnnouncement = async (e) => {
     e.preventDefault();
     if (!formTitle || !formBody) return;
@@ -274,6 +285,7 @@ export default function Announcements() {
                   <span className="text-xs text-slate-500 font-mono">{item.timestamp}</span>
                   <button
                     onClick={() => handleDelete(item.id)}
+                    aria-label="Delete Announcement"
                     className="text-slate-500 hover:text-[#E55C5C] transition-colors p-1"
                     title="Delete Announcement"
                   >
@@ -310,9 +322,14 @@ export default function Announcements() {
 
       {/* Create Announcement Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="broadcast-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+        >
           <div className="w-full max-w-lg rounded-2xl bg-[#171717] border border-white/[0.1] p-6 shadow-2xl">
-            <h3 className="font-heading text-lg font-bold text-white mb-1">
+            <h3 id="broadcast-modal-title" className="font-heading text-lg font-bold text-white mb-1">
               Create Push Announcement
             </h3>
             <p className="text-xs text-slate-400 mb-4">

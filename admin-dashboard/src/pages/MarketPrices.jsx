@@ -123,6 +123,17 @@ export default function MarketPrices() {
     };
   }, [selectedHub]);
 
+  // Escape key handler for modal accessibility
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && showModal) {
+        setShowModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showModal]);
+
   const handleAddPrice = async (e) => {
     e.preventDefault();
     if (!formPrice) return;
@@ -329,9 +340,14 @@ export default function MarketPrices() {
 
       {/* Modal Dialog for Updating Price */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="market-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+        >
           <div className="w-full max-w-md rounded-2xl bg-[#171717] border border-white/[0.1] p-6 shadow-2xl">
-            <h3 className="font-heading text-lg font-bold text-white mb-1">
+            <h3 id="market-modal-title" className="font-heading text-lg font-bold text-white mb-1">
               Update Mandi Benchmark Rate
             </h3>
             <p className="text-xs text-slate-400 mb-4">

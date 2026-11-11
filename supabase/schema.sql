@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS public.farms (
 -- 3. PONDS
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS public.ponds (
-    id TEXT PRIMARY KEY DEFAULT ('pond_' || extract(epoch from now())::bigint::text),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     farmer_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     farm_id UUID REFERENCES public.farms(id) ON DELETE SET NULL,
@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS public.ponds (
 CREATE TABLE IF NOT EXISTS public.crop_cycles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-    pond_id TEXT NOT NULL REFERENCES public.ponds(id) ON DELETE CASCADE,
+    pond_id UUID NOT NULL REFERENCES public.ponds(id) ON DELETE CASCADE,
     cycle_number INTEGER NOT NULL DEFAULT 1,
     species TEXT NOT NULL DEFAULT 'L. vannamei',
     hatchery_source TEXT,
@@ -330,6 +330,7 @@ CREATE TABLE IF NOT EXISTS public.mutation_ledger (
 -- =============================================================================
 CREATE INDEX IF NOT EXISTS idx_farms_owner_id ON public.farms(owner_id);
 CREATE INDEX IF NOT EXISTS idx_ponds_user_id ON public.ponds(user_id);
+CREATE INDEX IF NOT EXISTS idx_ponds_farmer_id ON public.ponds(farmer_id);
 CREATE INDEX IF NOT EXISTS idx_ponds_farm_id ON public.ponds(farm_id);
 CREATE INDEX IF NOT EXISTS idx_crop_cycles_pond_id ON public.crop_cycles(pond_id);
 CREATE INDEX IF NOT EXISTS idx_water_logs_pond_recorded ON public.water_logs(pond_id, recorded_at DESC);
@@ -436,14 +437,37 @@ SET search_path = public
 AS $$
     SELECT COALESCE(
         (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
-        OR (auth.jwt() ->> 'role') = 'service_role'
-        OR EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        ),
+        OR (auth.jwt() ->> 'role') = 'service_role',
         FALSE
     );
 $$;
+
+-- =============================================================================
+-- PRIVILEGE ESCALATION PREVENTION TRIGGER: prevent_role_escalation
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.prevent_role_escalation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.role IS DISTINCT FROM OLD.role THEN
+        IF NOT (
+            (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+            OR (auth.jwt() ->> 'role') = 'service_role'
+        ) THEN
+            RAISE EXCEPTION 'Unauthorized: only admin or service_role can modify user roles'
+                USING ERRCODE = '42501';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_prevent_role_escalation ON public.profiles;
+CREATE TRIGGER trg_prevent_role_escalation
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION public.prevent_role_escalation();
 
 -- =============================================================================
 -- OPTIMISTIC CONCURRENCY TRIGGER: increment_pond_version
@@ -453,7 +477,7 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    IF NEW.version IS NOT NULL AND NEW.version != OLD.version AND NEW.version != (OLD.version + 1) THEN
+    IF NEW.version IS DISTINCT FROM OLD.version THEN
         RAISE EXCEPTION 'Optimistic concurrency error: pond version mismatch (current %, provided %)',
             OLD.version, NEW.version
             USING ERRCODE = 'P0002';
@@ -518,7 +542,7 @@ CREATE POLICY "water_logs_all_own" ON public.water_logs
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = water_logs.pond_id
+            WHERE p.id::text = water_logs.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     )
@@ -526,7 +550,7 @@ CREATE POLICY "water_logs_all_own" ON public.water_logs
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = water_logs.pond_id
+            WHERE p.id::text = water_logs.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     );
@@ -537,7 +561,7 @@ CREATE POLICY "feed_logs_all_own" ON public.feed_logs
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = feed_logs.pond_id
+            WHERE p.id::text = feed_logs.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     )
@@ -545,7 +569,7 @@ CREATE POLICY "feed_logs_all_own" ON public.feed_logs
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = feed_logs.pond_id
+            WHERE p.id::text = feed_logs.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     );
@@ -571,7 +595,7 @@ CREATE POLICY "expenses_all_own" ON public.expenses
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = expenses.pond_id
+            WHERE p.id::text = expenses.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     )
@@ -579,7 +603,7 @@ CREATE POLICY "expenses_all_own" ON public.expenses
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = expenses.pond_id
+            WHERE p.id::text = expenses.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     );
@@ -590,7 +614,7 @@ CREATE POLICY "harvests_all_own" ON public.harvests
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = harvests.pond_id
+            WHERE p.id::text = harvests.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     )
@@ -598,7 +622,7 @@ CREATE POLICY "harvests_all_own" ON public.harvests
         (auth.uid() = user_id OR public.is_admin()) AND
         EXISTS (
             SELECT 1 FROM public.ponds p
-            WHERE p.id = harvests.pond_id
+            WHERE p.id::text = harvests.pond_id
               AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
         )
     );
@@ -642,12 +666,12 @@ CREATE OR REPLACE FUNCTION public.apply_idempotent_mutation(
 )
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = public
 AS $$
 DECLARE
     v_user_id UUID := auth.uid();
-    v_existing_ledger RECORD;
+    v_inserted_key UUID;
     v_current_version INT;
     v_record_id TEXT;
 BEGIN
@@ -655,18 +679,20 @@ BEGIN
         RAISE EXCEPTION 'Authentication required for mutation' USING ERRCODE = '42501';
     END IF;
 
-    -- 1. Check mutation ledger for existing idempotency key
-    SELECT * INTO v_existing_ledger
-    FROM public.mutation_ledger
-    WHERE idempotency_key = p_idempotency_key;
+    -- 1. Atomic insertion into mutation_ledger to eliminate TOCTOU races
+    INSERT INTO public.mutation_ledger (
+        idempotency_key, user_id, table_name, operation, payload, applied_at
+    ) VALUES (
+        p_idempotency_key, v_user_id, p_table_name, p_operation, p_payload, NOW()
+    )
+    ON CONFLICT (idempotency_key) DO NOTHING
+    RETURNING idempotency_key INTO v_inserted_key;
 
-    IF FOUND THEN
+    IF v_inserted_key IS NULL THEN
         RETURN jsonb_build_object(
-            'status', 'already_applied',
-            'idempotency_key', p_idempotency_key,
-            'table_name', v_existing_ledger.table_name,
-            'operation', v_existing_ledger.operation,
-            'applied_at', v_existing_ledger.applied_at
+            'status', 'duplicate',
+            'applied', true,
+            'idempotency_key', p_idempotency_key
         );
     END IF;
 
@@ -674,10 +700,10 @@ BEGIN
 
     -- 2. Optimistic Concurrency check for ponds
     IF p_table_name = 'ponds' AND UPPER(p_operation) IN ('UPDATE', 'UPSERT') THEN
-        IF p_base_version IS NOT NULL AND v_record_id IS NOT NULL THEN
+        IF p_base_version IS NOT NULL AND (p_payload->>'id') IS NOT NULL THEN
             SELECT version INTO v_current_version
             FROM public.ponds
-            WHERE id = v_record_id;
+            WHERE id = (p_payload->>'id')::uuid;
 
             IF FOUND AND v_current_version != p_base_version THEN
                 RAISE EXCEPTION 'Optimistic concurrency error: pond version mismatch (current %, expected %)',
@@ -757,7 +783,7 @@ BEGIN
                 stocking_density, doc, stocking_date, initial_abw,
                 current_abw, survival_rate, status, version
             ) VALUES (
-                COALESCE(v_record_id, 'pond_' || extract(epoch from now())::bigint::text),
+                COALESCE((p_payload->>'id')::uuid, gen_random_uuid()),
                 v_user_id,
                 v_user_id,
                 (p_payload->>'farm_id')::UUID,
@@ -781,7 +807,8 @@ BEGIN
                 survival_rate = COALESCE((p_payload->>'survival_rate')::DOUBLE PRECISION, survival_rate),
                 status = COALESCE(p_payload->>'status', status),
                 updated_at = NOW()
-            WHERE id = v_record_id AND (user_id = v_user_id OR farmer_id = v_user_id OR public.is_admin());
+            WHERE id = (p_payload->>'id')::uuid
+              AND (user_id = v_user_id OR farmer_id = v_user_id OR public.is_admin());
         END IF;
 
     ELSIF p_table_name = 'expenses' THEN
@@ -827,13 +854,6 @@ BEGIN
             ON CONFLICT (idempotency_key) DO NOTHING;
         END IF;
     END IF;
-
-    -- 4. Record successful execution into mutation_ledger
-    INSERT INTO public.mutation_ledger (
-        idempotency_key, user_id, table_name, operation, payload, applied_at
-    ) VALUES (
-        p_idempotency_key, v_user_id, p_table_name, p_operation, p_payload, NOW()
-    );
 
     RETURN jsonb_build_object(
         'status', 'success',

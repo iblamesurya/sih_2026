@@ -68,7 +68,7 @@ serve(async (req: Request) => {
     if (openWeatherApiKey) {
       try {
         const owmUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${openWeatherApiKey}&units=metric`;
-        const owmRes = await fetch(owmUrl);
+        const owmRes = await fetch(owmUrl, { signal: AbortSignal.timeout(4000) });
         if (owmRes.ok) {
           const owmJson = await owmRes.json();
           weatherPayload = {

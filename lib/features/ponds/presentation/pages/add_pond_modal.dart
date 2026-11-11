@@ -44,22 +44,23 @@ class _AddPondModalState extends ConsumerState<AddPondModal> {
     setState(() => _isCapturingGps = true);
     try {
       final loc = await ref.read(locationServiceProvider).getCurrentLocation(forceRefresh: true);
+      if (!mounted) return;
       setState(() {
         _latitude = loc.latitude;
         _longitude = loc.longitude;
         _gpsLocationName = loc.locationName;
         _isCapturingGps = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('GPS Tagged: ${loc.locationName} (${loc.latitude.toStringAsFixed(3)}, ${loc.longitude.toStringAsFixed(3)})'),
-            backgroundColor: AppColors.secondary,
-          ),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('GPS Tagged: ${loc.locationName} (${loc.latitude.toStringAsFixed(3)}, ${loc.longitude.toStringAsFixed(3)})'),
+          backgroundColor: AppColors.secondary,
+        ),
+      );
     } catch (e) {
-      setState(() => _isCapturingGps = false);
+      if (mounted) {
+        setState(() => _isCapturingGps = false);
+      }
     }
   }
 

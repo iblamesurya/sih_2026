@@ -168,6 +168,26 @@ class OfflineSyncService {
     return SharedPreferences.getInstance();
   }
 
+  /// Acquires the queue mutex lock to prevent concurrent modifications between
+  /// in-flight enqueue operations and queue drain / removal operations.
+  Future<T> _withQueueLock<T>(Future<T> Function() action) async {
+    final previousLock = _enqueueLock;
+    final completer = Completer<void>();
+    _enqueueLock = completer.future;
+
+    if (previousLock != null) {
+      try {
+        await previousLock;
+      } catch (_) {}
+    }
+
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+    }
+  }
+
   /// Generates a valid standard UUID v4 string (8-4-4-4-12 hex).
   static String generateUuid([String? seed]) {
     final rawBytes = seed != null
@@ -244,17 +264,7 @@ class OfflineSyncService {
 
   /// Adds a mutation to the offline queue with strict FIFO ordering and deterministic idempotency metadata.
   Future<void> enqueue(Map<String, dynamic> mutation) async {
-    final previousLock = _enqueueLock;
-    final completer = Completer<void>();
-    _enqueueLock = completer.future;
-
-    if (previousLock != null) {
-      try {
-        await previousLock;
-      } catch (_) {}
-    }
-
-    try {
+    await _withQueueLock(() async {
       final prefs = await _prefs;
       final currentList = prefs.getStringList(queueKey) ?? [];
 
@@ -304,9 +314,7 @@ class OfflineSyncService {
           'OfflineSyncService: Enqueued mutation ${enrichedMutation['id']} (idempotencyKey: $idemKey). Queue size: ${updatedList.length}',
         );
       }
-    } finally {
-      completer.complete();
-    }
+    });
   }
 
   /// Enqueues a strongly-typed [OutboxMutation].
@@ -381,8 +389,10 @@ class OfflineSyncService {
 
   /// Clears all pending mutations from active storage.
   Future<void> clearQueue() async {
-    final prefs = await _prefs;
-    await prefs.remove(queueKey);
+    await _withQueueLock(() async {
+      final prefs = await _prefs;
+      await prefs.remove(queueKey);
+    });
   }
 
   /// Clears the dead-letter quarantine queue.
@@ -390,6 +400,259 @@ class OfflineSyncService {
     final prefs = await _prefs;
     await prefs.remove(deadLetterKey);
   }
+
+  /// Returns a set of entity IDs that currently have pending, uncommitted mutations in the outbox queue.
+  /// Used by [DataHydrationService] to prevent clean remote queries from overwriting local uncommitted edits.
+  Future<Set<String>> getDirtyEntityIds() async {
+    final queue = await getQueue();
+    final dirty = <String>{};
+
+    for (final mutation in queue) {
+      final targetId = mutation['target_id']?.toString();
+      if (targetId != null && targetId.isNotEmpty) {
+        dirty.add(targetId);
+      }
+
+      final payload = mutation['payload'];
+      if (payload is Map) {
+        final id = payload['id']?.toString();
+        if (id != null && id.isNotEmpty) {
+          dirty.add(id);
+        }
+      }
+
+      for (final key in [
+        'pond_data',
+        'log_data',
+        'feed_data',
+        'scan_data',
+        'expense_data',
+        'harvest_data'
+      ]) {
+        final sub = mutation[key];
+        if (sub is Map) {
+          final id = sub['id']?.toString();
+          if (id != null && id.isNotEmpty) {
+            dirty.add(id);
+          }
+        }
+      }
+    }
+
+    return dirty;
+  }
+
+  /// Atomically removes a mutation from the persistent queue by reading
+  /// the fresh queue from [SharedPreferences] under the [_enqueueLock] mutex.
+  /// This prevents in-flight mutations added by [enqueue] from being clobbered.
+  Future<void> _atomicRemoveFromQueue(String mutationId) async {
+    await _withQueueLock(() async {
+      final prefs = await _prefs;
+      final currentList = prefs.getStringList(queueKey) ?? [];
+      if (currentList.isEmpty) return;
+
+      final updatedList = <String>[];
+      bool removed = false;
+
+      for (final raw in currentList) {
+        if (!removed) {
+          try {
+            final decoded = jsonDecode(raw);
+            final id = (decoded is Map ? decoded['id'] : null)?.toString();
+            if (id == mutationId) {
+              removed = true;
+              continue; // Do not include in updated list
+            }
+          } catch (_) {}
+        }
+        updatedList.add(raw);
+      }
+
+      // If not removed by matching ID, remove the head item as a fallback
+      if (!removed && updatedList.isNotEmpty) {
+        updatedList.removeAt(0);
+      }
+
+      await prefs.setStringList(queueKey, updatedList);
+    });
+  }
+
+  @visibleForTesting
+  Future<void> atomicRemoveFromQueue(String mutationId) =>
+      _atomicRemoveFromQueue(mutationId);
+
+  static bool _isPondInsert(Map<String, dynamic> mutation) {
+    final table = (mutation['table'] ?? '').toString().toLowerCase();
+    final op = (mutation['operation'] ??
+            mutation['action'] ??
+            mutation['type'] ??
+            '')
+        .toString()
+        .toUpperCase();
+    if (table == 'ponds') {
+      return op == 'INSERT' || op == 'UPSERT';
+    }
+    return op == 'INSERT_POND';
+  }
+
+  static String? _extractPondIdFromParent(Map<String, dynamic> mutation) {
+    final payload = mutation['payload'] is Map
+        ? (mutation['payload'] as Map)
+        : mutation;
+    final pondData =
+        mutation['pond_data'] is Map ? (mutation['pond_data'] as Map) : null;
+    final id = payload['id'] ??
+        payload['pond_id'] ??
+        payload['pondId'] ??
+        pondData?['id'] ??
+        pondData?['pond_id'] ??
+        pondData?['pondId'] ??
+        mutation['target_id'];
+    return id?.toString();
+  }
+
+  static bool _isChildOfPond(Map<String, dynamic> mutation, String parentId) {
+    if (parentId.isEmpty) return false;
+    final payload =
+        mutation['payload'] is Map ? (mutation['payload'] as Map) : null;
+    final logData =
+        mutation['log_data'] is Map ? (mutation['log_data'] as Map) : null;
+    final feedData =
+        mutation['feed_data'] is Map ? (mutation['feed_data'] as Map) : null;
+    final scanData =
+        mutation['scan_data'] is Map ? (mutation['scan_data'] as Map) : null;
+    final expenseData = mutation['expense_data'] is Map
+        ? (mutation['expense_data'] as Map)
+        : null;
+    final harvestData = mutation['harvest_data'] is Map
+        ? (mutation['harvest_data'] as Map)
+        : null;
+
+    final candidates = [
+      payload?['pond_id'],
+      payload?['pondId'],
+      mutation['pond_id'],
+      mutation['pondId'],
+      logData?['pond_id'],
+      logData?['pondId'],
+      feedData?['pond_id'],
+      feedData?['pondId'],
+      scanData?['pond_id'],
+      scanData?['pondId'],
+      expenseData?['pond_id'],
+      expenseData?['pondId'],
+      harvestData?['pond_id'],
+      harvestData?['pondId'],
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate != null && candidate.toString() == parentId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Quarantines a permanently failed mutation to the dead-letter queue under the [_enqueueLock] mutex.
+  /// If the failed mutation was an offline pond creation (`INSERT` / `UPSERT` on `ponds`),
+  /// this cascades to automatically quarantine all dependent child mutations referencing
+  /// the failed pond ID (`parentId`) to prevent false foreign key (23503) errors.
+  Future<void> _quarantineMutationAndChildren(
+    Map<String, dynamic> mutation,
+    String? failureReason,
+  ) async {
+    await _withQueueLock(() async {
+      final prefs = await _prefs;
+      final currentQueue = prefs.getStringList(queueKey) ?? [];
+      final currentDeadLetter = prefs.getStringList(deadLetterKey) ?? [];
+
+      final mutationId = mutation['id']?.toString();
+      final isPond = _isPondInsert(mutation);
+      final parentId = isPond ? _extractPondIdFromParent(mutation) : null;
+
+      final parentQuarantined = Map<String, dynamic>.from(mutation);
+      parentQuarantined['status'] = SyncStatus.failedPermanent.name;
+      parentQuarantined['last_error'] = failureReason;
+      parentQuarantined['lastError'] = failureReason;
+
+      final itemsToQuarantine = <Map<String, dynamic>>[parentQuarantined];
+      final remainingQueue = <String>[];
+
+      bool parentRemoved = false;
+
+      for (final raw in currentQueue) {
+        Map<String, dynamic> item;
+        try {
+          final decoded = jsonDecode(raw);
+          item = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded as Map);
+        } catch (_) {
+          continue;
+        }
+
+        final itemId = item['id']?.toString();
+
+        if (!parentRemoved &&
+            (itemId == mutationId || (mutationId == null && itemId == null))) {
+          parentRemoved = true;
+          continue; // Parent is already in itemsToQuarantine
+        }
+
+        if (parentId != null &&
+            parentId.isNotEmpty &&
+            _isChildOfPond(item, parentId)) {
+          final childQuarantined = Map<String, dynamic>.from(item);
+          childQuarantined['status'] = SyncStatus.failedPermanent.name;
+          final errorMsg = 'Blocked by failed parent pond creation: $parentId';
+          childQuarantined['last_error'] = errorMsg;
+          childQuarantined['lastError'] = errorMsg;
+          itemsToQuarantine.add(childQuarantined);
+
+          if (kDebugMode) {
+            debugPrint(
+              'OfflineSyncService: Cascading quarantine: child mutation ${childQuarantined['id']} '
+              'blocked by failed parent pond $parentId',
+            );
+          }
+          continue;
+        }
+
+        remainingQueue.add(raw);
+      }
+
+      if (!parentRemoved &&
+          remainingQueue.isNotEmpty &&
+          (mutationId == null || mutationId.isEmpty)) {
+        remainingQueue.removeAt(0);
+      }
+
+      final updatedDeadLetter = List<String>.from(currentDeadLetter);
+      for (final qItem in itemsToQuarantine) {
+        while (updatedDeadLetter.length >= maxQueueCapacity) {
+          updatedDeadLetter.removeAt(0);
+        }
+        updatedDeadLetter.add(jsonEncode(qItem));
+      }
+
+      await prefs.setStringList(deadLetterKey, updatedDeadLetter);
+      await prefs.setStringList(queueKey, remainingQueue);
+
+      if (kDebugMode) {
+        debugPrint(
+          'OfflineSyncService: Quarantined ${itemsToQuarantine.length} mutation(s) '
+          '(parent: $mutationId, reason: $failureReason). Remaining queue size: ${remainingQueue.length}',
+        );
+      }
+    });
+  }
+
+  @visibleForTesting
+  Future<void> quarantineMutationAndChildren(
+    Map<String, dynamic> mutation,
+    String? failureReason,
+  ) =>
+      _quarantineMutationAndChildren(mutation, failureReason);
 
   /// Sequentially drains all pending mutations with:
   /// 1. Re-entrancy protection.
@@ -431,31 +694,38 @@ class OfflineSyncService {
   }) async {
     _isDraining = true;
     try {
-      final prefs = await _prefs;
-      final currentList = prefs.getStringList(queueKey) ?? [];
-      if (currentList.isEmpty) {
-        return 0;
-      }
-
-      final List<String> remainingList = List<String>.from(currentList);
       int successCount = 0;
 
-      while (remainingList.isNotEmpty) {
-        final rawItem = remainingList.first;
-        Map<String, dynamic> mutation;
-        try {
-          final decoded = jsonDecode(rawItem);
-          mutation = decoded is Map<String, dynamic>
-              ? decoded
-              : Map<String, dynamic>.from(decoded as Map);
-        } catch (e) {
-          // Corrupted item, remove it
-          remainingList.removeAt(0);
-          await prefs.setStringList(queueKey, remainingList);
-          continue;
+      while (true) {
+        Map<String, dynamic>? currentMutation;
+
+        await _withQueueLock(() async {
+          final prefs = await _prefs;
+          final currentList = prefs.getStringList(queueKey) ?? [];
+          while (currentList.isNotEmpty) {
+            try {
+              final decoded = jsonDecode(currentList.first);
+              currentMutation = decoded is Map<String, dynamic>
+                  ? decoded
+                  : Map<String, dynamic>.from(decoded as Map);
+              break;
+            } catch (e) {
+              // Corrupted item, discard
+              currentList.removeAt(0);
+              await prefs.setStringList(queueKey, currentList);
+            }
+          }
+        });
+
+        if (currentMutation == null) {
+          // Active queue is completely drained
+          break;
         }
 
-        int attempts = mutation['retry_count'] as int? ?? 0;
+        final mutation = currentMutation!;
+        final mutationId = (mutation['id'] ?? '').toString();
+
+        int attempts = (mutation['retry_count'] as num?)?.toInt() ?? 0;
         bool success = false;
         bool isPermanent = false;
         String? failureReason;
@@ -481,7 +751,7 @@ class OfflineSyncService {
               success = false;
               if (kDebugMode) {
                 debugPrint(
-                  'OfflineSyncService: Error draining item ${mutation['id']} (attempt $attempts): $e',
+                  'OfflineSyncService: Error draining item $mutationId (attempt $attempts): $e',
                 );
               }
             }
@@ -510,33 +780,35 @@ class OfflineSyncService {
 
         if (success) {
           successCount++;
-          remainingList.removeAt(0);
-          await prefs.setStringList(queueKey, remainingList);
+          await _atomicRemoveFromQueue(mutationId);
         } else if (isPermanent) {
-          // Eliminate head-of-line blocking: quarantine permanent failure to dead-letter queue
-          remainingList.removeAt(0);
-          await prefs.setStringList(queueKey, remainingList);
-
-          mutation['status'] = SyncStatus.failedPermanent.name;
-          mutation['last_error'] = failureReason;
-
-          final deadLetter = prefs.getStringList(deadLetterKey) ?? [];
-          final updatedDeadLetter = List<String>.from(deadLetter);
-          while (updatedDeadLetter.length >= maxQueueCapacity) {
-            updatedDeadLetter.removeAt(0);
-          }
-          updatedDeadLetter.add(jsonEncode(mutation));
-          await prefs.setStringList(deadLetterKey, updatedDeadLetter);
-
-          if (kDebugMode) {
-            debugPrint(
-              'OfflineSyncService: Quarantined permanent error for mutation ${mutation['id']} ($failureReason). Unblocking subsequent queue items.',
-            );
-          }
-          // Continue to process subsequent mutations in queue without head-of-line blocking
+          // Cascading parent-child quarantine for failed parent pond creation
+          // and eliminate head-of-line blocking
+          await _quarantineMutationAndChildren(mutation, failureReason);
+          // Continue to process subsequent unblocked mutations
           continue;
         } else {
-          // Transient network/server failure: stop draining to preserve FIFO order until connection recovers
+          // Transient network/server failure: update retry count and break to preserve FIFO
+          await _withQueueLock(() async {
+            final prefs = await _prefs;
+            final currentList = prefs.getStringList(queueKey) ?? [];
+            if (currentList.isNotEmpty) {
+              final updated = List<String>.from(currentList);
+              for (int i = 0; i < updated.length; i++) {
+                try {
+                  final dec = jsonDecode(updated[i]) as Map;
+                  if (dec['id']?.toString() == mutationId) {
+                    final m = Map<String, dynamic>.from(dec);
+                    m['retry_count'] = attempts;
+                    m['status'] = SyncStatus.pending.name;
+                    updated[i] = jsonEncode(m);
+                    break;
+                  }
+                } catch (_) {}
+              }
+              await prefs.setStringList(queueKey, updated);
+            }
+          });
           break;
         }
       }

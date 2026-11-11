@@ -503,7 +503,7 @@ void main() {
       await syncService.clearQueue();
 
       // Mutation with explicit seed
-      final keySeed = 'farmer_bhimavaram_20261111_0600';
+      const keySeed = 'farmer_bhimavaram_20261111_0600';
       final uuid1 = OfflineSyncService.generateUuid(keySeed);
       final uuid2 = OfflineSyncService.generateUuid(keySeed);
       expect(uuid1, equals(uuid2));
@@ -568,6 +568,155 @@ void main() {
         'FLUSH_mut_pre_hydrate_2',
         'REMOTE_QUERY_SUPABASE',
       ]));
+    });
+
+    test('Adversarial 5.4: Interleaved concurrent enqueue during slow async drain preserves all mutations without race condition or storage clobbering', () async {
+      await syncService.clearQueue();
+
+      // Enqueue 1 initial mutation
+      await syncService.enqueue({
+        'id': 'mut_adv_slow',
+        'table': 'ponds',
+        'action': 'insert',
+        'payload': {'id': 'p_init', 'name': 'Initial Pond'},
+      });
+
+      // Start slow drain
+      final drainFuture = syncService.drainQueue(
+        initialBackoff: Duration.zero,
+        useJitter: false,
+        executor: (m) async {
+          if (m['id'] == 'mut_adv_slow') {
+            await Future.delayed(const Duration(milliseconds: 50));
+          }
+          return true;
+        },
+      );
+
+      // Concurrent enqueues during in-flight drain
+      await Future.delayed(const Duration(milliseconds: 15));
+      await syncService.enqueue({
+        'id': 'mut_adv_conc_1',
+        'table': 'water_logs',
+        'payload': {'ph': 8.0},
+      });
+      await syncService.enqueue({
+        'id': 'mut_adv_conc_2',
+        'table': 'feed_logs',
+        'payload': {'feed_kg': 50.0},
+      });
+
+      final firstDrainCount = await drainFuture;
+      expect(firstDrainCount, greaterThanOrEqualTo(1));
+
+      // Second drain clears remaining concurrent additions
+      final secondDrainCount = await syncService.drainQueue(
+        initialBackoff: Duration.zero,
+        useJitter: false,
+        executor: (m) async => true,
+      );
+
+      expect(firstDrainCount + secondDrainCount, equals(3),
+          reason: 'All mutations must be processed with zero loss during concurrency');
+      expect(await syncService.getQueueLength(), equals(0));
+    });
+
+    test('Adversarial 5.5: DataHydrationService merge logic ensures remote server records win when outbox is clean, but dirty outbox entity edits strictly take precedence', () {
+      final hydration = DataHydrationService();
+
+      // Case A: Clean outbox (no pending edits) -> Remote server authority wins
+      final cleanLocal = [
+        {'id': 'pond_100', 'name': 'Local Stale Name', 'version': 1},
+      ];
+      final remoteUpdated = [
+        {'id': 'pond_100', 'name': 'Server Authoritative Name', 'version': 2},
+      ];
+
+      final cleanMerge = hydration.mergeMapsById(remoteUpdated, cleanLocal, dirtyEntityIds: {});
+      expect(cleanMerge.length, equals(1));
+      expect(cleanMerge.first['name'], equals('Server Authoritative Name'));
+      expect(cleanMerge.first['version'], equals(2));
+
+      // Case B: Dirty outbox (uncommitted local edit) -> Local dirty edit strictly wins
+      final dirtyMerge = hydration.mergeMapsById(
+        remoteUpdated,
+        cleanLocal,
+        dirtyEntityIds: {'pond_100'},
+      );
+      expect(dirtyMerge.length, equals(1));
+      expect(dirtyMerge.first['name'], equals('Local Stale Name'),
+          reason: 'Dirty uncommitted local mutation must win over remote server record');
+    });
+
+    test('Adversarial 5.6: Cascading parent-child quarantine moves failing pond and all dependent water/feed logs to dead-letter queue and leaves active queue clean', () async {
+      await syncService.clearQueue();
+      await syncService.clearDeadLetterQueue();
+
+      // 1. Parent pond that will fail permanently
+      await syncService.enqueue({
+        'id': 'mut_bad_parent_pond',
+        'table': 'ponds',
+        'action': 'insert',
+        'payload': {'id': 'pond_doomed', 'name': 'Doomed Pond'},
+      });
+
+      // 2. Child water log referencing pond_doomed
+      await syncService.enqueue({
+        'id': 'mut_child_wl',
+        'table': 'water_logs',
+        'action': 'insert',
+        'payload': {'id': 'wl_1', 'pond_id': 'pond_doomed', 'ph': 7.5},
+      });
+
+      // 3. Child feed log referencing pond_doomed
+      await syncService.enqueue({
+        'id': 'mut_child_fl',
+        'table': 'feed_logs',
+        'action': 'insert',
+        'payload': {'id': 'fl_1', 'pondId': 'pond_doomed', 'feed_kg': 20.0},
+      });
+
+      // 4. Healthy independent pond
+      await syncService.enqueue({
+        'id': 'mut_healthy_pond',
+        'table': 'ponds',
+        'action': 'insert',
+        'payload': {'id': 'pond_healthy', 'name': 'Healthy Pond'},
+      });
+
+      expect(await syncService.getQueueLength(), equals(4));
+
+      final successIds = <String>[];
+
+      // Drain queue: mut_bad_parent_pond throws fatal 42501
+      final drainedCount = await syncService.drainQueue(
+        initialBackoff: Duration.zero,
+        useJitter: false,
+        executor: (m) async {
+          if (m['id'] == 'mut_bad_parent_pond') {
+            throw const PostgrestException(
+              message: 'violates row level security',
+              code: '42501',
+            );
+          }
+          successIds.add(m['id'] as String);
+          return true;
+        },
+      );
+
+      // Only healthy pond should succeed
+      expect(drainedCount, equals(1));
+      expect(successIds, equals(['mut_healthy_pond']));
+
+      // Active queue is completely empty
+      expect(await syncService.getQueueLength(), equals(0));
+
+      // Dead letter queue has parent + 2 children = 3 quarantined items
+      expect(await syncService.deadLetterQueueLength, equals(3));
+      final dlItems = await syncService.getDeadLetterQueue();
+      expect(dlItems.any((m) => m['id'] == 'mut_bad_parent_pond'), isTrue);
+      expect(dlItems.any((m) => m['id'] == 'mut_child_wl'), isTrue);
+      expect(dlItems.any((m) => m['id'] == 'mut_child_fl'), isTrue);
     });
   });
 }

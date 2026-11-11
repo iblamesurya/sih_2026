@@ -287,7 +287,10 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      titleCtrl.dispose();
+      bodyCtrl.dispose();
+    });
   }
 
   void _showDiscussionDetail(Map<String, dynamic> item) {
@@ -473,7 +476,9 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      replyCtrl.dispose();
+    });
   }
 
   @override

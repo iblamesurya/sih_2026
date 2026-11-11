@@ -28,3 +28,12 @@
 
 # Google Play Core Deferred Components
 -dontwarn com.google.android.play.core.**
+
+# Flutter Plugins (Geolocator, Image Picker, SharedPreferences)
+-keep class com.baseflow.geolocator.** { *; }
+-keep class io.flutter.plugins.imagepicker.** { *; }
+-keep class io.flutter.plugins.sharedpreferences.** { *; }
+
+# Crypto & Security
+-keep class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**

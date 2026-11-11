@@ -75,6 +75,7 @@ export default function Layout() {
 
             <button
               onClick={() => setSidebarOpen(false)}
+              aria-label="Close Sidebar"
               className="rounded-lg p-1.5 text-slate-400 hover:bg-white/[0.05] hover:text-white lg:hidden"
             >
               <X className="h-5 w-5" />
@@ -177,7 +178,10 @@ export default function Layout() {
               />
             </div>
 
-            <button className="relative rounded-xl bg-[#171717] p-2.5 text-slate-300 hover:text-white border border-white/[0.08] hover:border-[#00E5FF]/30 transition-all">
+            <button
+              aria-label="Alert notifications"
+              className="relative rounded-xl bg-[#171717] p-2.5 text-slate-300 hover:text-white border border-white/[0.08] hover:border-[#00E5FF]/30 transition-all"
+            >
               <Bell className="h-4 w-4" />
               <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[#E55C5C] ring-2 ring-[#0A0A0B]" />
             </button>

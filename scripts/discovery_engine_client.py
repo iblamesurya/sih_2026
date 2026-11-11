@@ -10,11 +10,50 @@ APIs implemented:
 
 import sys
 import json
-from typing import List, Dict, Any, Optional
+import time
+import random
+import logging
+from typing import List, Dict, Any, Optional, Callable
 from google.cloud import discoveryengine_v1alpha as discoveryengine
+from google.api_core import exceptions as gexceptions
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROJECT_ID = "elite-magpie-460716-s7"
 DEFAULT_LOCATION = "global"
+
+def retry_with_exponential_backoff(
+    func: Callable,
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    backoff_factor: float = 2.0,
+    jitter: bool = True
+) -> Any:
+    """
+    Executes a callable with exponential backoff and jitter for transient API errors
+    (ResourceExhausted 429, ServiceUnavailable 503, DeadlineExceeded 504).
+    """
+    delay = initial_delay
+    last_exception = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            return func()
+        except (gexceptions.ResourceExhausted, gexceptions.ServiceUnavailable, gexceptions.DeadlineExceeded, ConnectionError) as exc:
+            last_exception = exc
+            if attempt == max_retries:
+                logger.error(f"Discovery Engine API call failed after {max_retries} attempts: {exc}")
+                raise
+            sleep_time = delay * (1 + (random.random() * 0.2 if jitter else 0))
+            logger.warning(f"Transient error ({exc.__class__.__name__}), retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+            time.sleep(sleep_time)
+            delay *= backoff_factor
+        except Exception as exc:
+            # Fatal / non-retryable exception
+            logger.error(f"Discovery Engine non-retryable exception: {exc}")
+            raise
+
+    raise last_exception
 
 class PrawnGuardDiscoveryEngine:
     def __init__(self, project_id: str = DEFAULT_PROJECT_ID, location: str = DEFAULT_LOCATION):
@@ -67,7 +106,7 @@ class PrawnGuardDiscoveryEngine:
             facts=facts,
         )
 
-        response = self.grounding_client.check_grounding(request=request)
+        response = retry_with_exponential_backoff(lambda: self.grounding_client.check_grounding(request=request))
         claims = []
         for claim in response.claims:
             claims.append({
@@ -117,7 +156,7 @@ class PrawnGuardDiscoveryEngine:
             top_n=top_n
         )
 
-        response = self.rank_client.rank(request=request)
+        response = retry_with_exponential_backoff(lambda: self.rank_client.rank(request=request))
         ranked_results = []
         for r in response.records:
             ranked_results.append({
@@ -157,7 +196,7 @@ class PrawnGuardDiscoveryEngine:
             answer_generation_spec=answer_generation_spec,
         )
 
-        response = self.conversational_client.answer_query(request=request)
+        response = retry_with_exponential_backoff(lambda: self.conversational_client.answer_query(request=request))
         citations = []
         for step in response.answer.steps:
             for citation in step.actions:

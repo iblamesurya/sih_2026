@@ -134,25 +134,25 @@ class PondCardSkeleton extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.cardBorder),
         ),
-        child: Column(
+        child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
-                  children: const [
+                  children: [
                     ShimmerCircle(size: 20),
                     SizedBox(width: 10),
                     ShimmerBox(width: 140, height: 18, borderRadius: 4),
                   ],
                 ),
-                const ShimmerBox(width: 60, height: 22, borderRadius: 12),
+                ShimmerBox(width: 60, height: 22, borderRadius: 12),
               ],
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             Row(
-              children: const [
+              children: [
                 ShimmerBox(width: 70, height: 14, borderRadius: 4),
                 SizedBox(width: 12),
                 ShimmerBox(width: 90, height: 14, borderRadius: 4),
@@ -160,59 +160,65 @@ class PondCardSkeleton extends StatelessWidget {
                 ShimmerBox(width: 60, height: 14, borderRadius: 4),
               ],
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.all(Radius.circular(10)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        ShimmerBox(width: 40, height: 10, borderRadius: 2),
-                        SizedBox(height: 6),
-                        ShimmerBox(width: 60, height: 16, borderRadius: 4),
-                      ],
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ShimmerBox(width: 40, height: 10, borderRadius: 2),
+                          SizedBox(height: 6),
+                          ShimmerBox(width: 60, height: 16, borderRadius: 4),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: 10),
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.all(Radius.circular(10)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        ShimmerBox(width: 40, height: 10, borderRadius: 2),
-                        SizedBox(height: 6),
-                        ShimmerBox(width: 60, height: 16, borderRadius: 4),
-                      ],
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ShimmerBox(width: 40, height: 10, borderRadius: 2),
+                          SizedBox(height: 6),
+                          ShimmerBox(width: 60, height: 16, borderRadius: 4),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
+                SizedBox(width: 10),
                 Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.all(Radius.circular(10)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        ShimmerBox(width: 40, height: 10, borderRadius: 2),
-                        SizedBox(height: 6),
-                        ShimmerBox(width: 60, height: 16, borderRadius: 4),
-                      ],
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ShimmerBox(width: 40, height: 10, borderRadius: 2),
+                          SizedBox(height: 6),
+                          ShimmerBox(width: 60, height: 16, borderRadius: 4),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -240,58 +246,60 @@ class TelemetryGraphSkeleton extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.cardBorder),
         ),
-        child: Column(
+        child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
+              children: [
                 ShimmerBox(width: 130, height: 18, borderRadius: 4),
                 ShimmerBox(width: 70, height: 14, borderRadius: 4),
               ],
             ),
-            const SizedBox(height: 18),
-            Container(
-              height: 160,
-              width: double.infinity,
+            SizedBox(height: 18),
+            DecoratedBox(
               decoration: BoxDecoration(
                 color: AppColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.all(Radius.circular(12)),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        ShimmerBox(width: 30, height: 10, borderRadius: 2),
-                        ShimmerBox(width: 200, height: 2, borderRadius: 1),
-                      ],
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        ShimmerBox(width: 30, height: 10, borderRadius: 2),
-                        ShimmerBox(width: 200, height: 2, borderRadius: 1),
-                      ],
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        ShimmerBox(width: 30, height: 10, borderRadius: 2),
-                        ShimmerBox(width: 200, height: 2, borderRadius: 1),
-                      ],
-                    ),
-                  ],
+              child: SizedBox(
+                height: 160,
+                width: double.infinity,
+                child: Padding(
+                  padding: EdgeInsets.all(14),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          ShimmerBox(width: 30, height: 10, borderRadius: 2),
+                          ShimmerBox(width: 200, height: 2, borderRadius: 1),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          ShimmerBox(width: 30, height: 10, borderRadius: 2),
+                          ShimmerBox(width: 200, height: 2, borderRadius: 1),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          ShimmerBox(width: 30, height: 10, borderRadius: 2),
+                          ShimmerBox(width: 200, height: 2, borderRadius: 1),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: const [
+              children: [
                 ShimmerBox(width: 60, height: 12, borderRadius: 4),
                 ShimmerBox(width: 60, height: 12, borderRadius: 4),
                 ShimmerBox(width: 60, height: 12, borderRadius: 4),
@@ -320,12 +328,12 @@ class MandiPriceSkeleton extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.cardBorder),
         ),
-        child: Row(
+        child: const Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
+              children: [
                 ShimmerBox(width: 120, height: 16, borderRadius: 4),
                 SizedBox(height: 6),
                 ShimmerBox(width: 180, height: 12, borderRadius: 4),
@@ -335,7 +343,7 @@ class MandiPriceSkeleton extends StatelessWidget {
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: const [
+              children: [
                 ShimmerBox(width: 70, height: 20, borderRadius: 4),
                 SizedBox(height: 6),
                 ShimmerBox(width: 45, height: 14, borderRadius: 8),

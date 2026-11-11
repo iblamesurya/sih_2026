@@ -267,6 +267,7 @@ export default function Dashboard() {
           <button
             onClick={handleManualRefresh}
             disabled={refreshing}
+            aria-label="Refresh dashboard metrics"
             className="flex items-center gap-1.5 rounded-xl bg-[#171717] px-3 py-2 border border-white/[0.08] text-xs font-medium text-slate-300 hover:text-white hover:border-[#00E5FF]/40 transition-all"
             title="Refresh dashboard metrics"
           >

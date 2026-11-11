@@ -13,6 +13,7 @@ import '../services/subscription_service.dart';
 import '../services/location_service.dart';
 import '../services/weather_service.dart';
 import '../services/realtime_service.dart';
+import '../services/base_repository.dart';
 import '../services/farm_data_repository.dart';
 import '../services/emergency_alarm_service.dart';
 import '../services/data_hydration_service.dart';
@@ -351,6 +352,7 @@ void clearAllUserData(dynamic ref) {
     final hydration = ref.read(dataHydrationServiceProvider) as DataHydrationService;
     hydration.clearLocalSnapshot();
   } catch (_) {}
+  BaseRepository.invalidateCache();
 }
 
 /// Extension helper on [WidgetRef] for convenient state clearing from UI widgets.

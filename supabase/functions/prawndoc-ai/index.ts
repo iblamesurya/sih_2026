@@ -129,6 +129,13 @@ serve(async (req: Request) => {
       );
     }
 
+    if (image && image.length > 10 * 1024 * 1024) {
+      return new Response(
+        JSON.stringify({ error: "Image payload exceeds maximum allowed size (10MB)." }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Server-side Subscription Tier and Scan Quota Gate
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -153,6 +160,7 @@ serve(async (req: Request) => {
             "Authorization": authHeader ?? `Bearer ${supabaseServiceKey}`,
           },
           body: JSON.stringify(rpcPayload),
+          signal: AbortSignal.timeout(4000),
         });
 
         if (rpcRes.ok) {
@@ -265,6 +273,7 @@ Return ONLY a valid JSON object with this exact structure:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(geminiPayload),
+        signal: AbortSignal.timeout(12000),
       });
 
       if (geminiRes.ok) {

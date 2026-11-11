@@ -281,6 +281,7 @@ class DataHydrationService {
     final syncService =
         offlineSync ?? ref.read(offlineSyncProvider) as OfflineSyncService;
     await flushPendingOutbox(ref, offlineSync: syncService);
+    final dirtyIds = await syncService.getDirtyEntityIds();
 
     final repo =
         repository ?? ref.read(farmDataRepositoryProvider) as FarmDataRepository;
@@ -293,14 +294,18 @@ class DataHydrationService {
         final localPonds =
             ref.read(pondListProvider) as List<Map<String, dynamic>>;
         ref.read(pondListProvider.notifier).state =
-            _mergeMapsById(remotePonds, localPonds);
+            _mergeMapsById(remotePonds, localPonds, dirtyEntityIds: dirtyIds);
       }
 
       final remoteWaterLogs = await repo.fetchWaterLogs();
       if (remoteWaterLogs.isNotEmpty) {
         final localWaterLogs =
             ref.read(waterLogsProvider) as List<Map<String, dynamic>>;
-        final mergedWater = _mergeMapsById(remoteWaterLogs, localWaterLogs);
+        final mergedWater = _mergeMapsById(
+          remoteWaterLogs,
+          localWaterLogs,
+          dirtyEntityIds: dirtyIds,
+        );
         ref.read(waterLogsProvider.notifier).state = mergedWater;
         _recomputeAlertsAndAlarms(ref, mergedWater, triggerSound: false);
       }
@@ -310,7 +315,7 @@ class DataHydrationService {
         final localFeedLogs =
             ref.read(feedLogsProvider) as List<Map<String, dynamic>>;
         ref.read(feedLogsProvider.notifier).state =
-            _mergeMapsById(remoteFeedLogs, localFeedLogs);
+            _mergeMapsById(remoteFeedLogs, localFeedLogs, dirtyEntityIds: dirtyIds);
       }
 
       final remoteScans = await repo.fetchDiseaseScans();
@@ -318,17 +323,30 @@ class DataHydrationService {
         final localScans =
             ref.read(diseaseScansProvider) as List<Map<String, dynamic>>;
         ref.read(diseaseScansProvider.notifier).state =
-            _mergeMapsById(remoteScans, localScans);
+            _mergeMapsById(remoteScans, localScans, dirtyEntityIds: dirtyIds);
       }
 
       final remoteExpenses = await repo.fetchExpenses(farmId: farmId);
       if (remoteExpenses.isNotEmpty) {
         final localExpenses = ref.read(expensesProvider) as List<Expense>;
-        final seenIds = <String>{};
+        final localMap = {for (final e in localExpenses) e.id: e};
         final merged = <Expense>[];
-        for (final exp in [...localExpenses, ...remoteExpenses]) {
-          if (seenIds.add(exp.id)) {
-            merged.add(exp);
+        final handledIds = <String>{};
+
+        for (final rem in remoteExpenses) {
+          if (!handledIds.add(rem.id)) continue;
+          final loc = localMap[rem.id];
+          if (loc == null) {
+            merged.add(rem);
+          } else if (dirtyIds.contains(rem.id) || loc.date.isAfter(rem.date)) {
+            merged.add(loc);
+          } else {
+            merged.add(rem);
+          }
+        }
+        for (final loc in localExpenses) {
+          if (handledIds.add(loc.id)) {
+            merged.add(loc);
           }
         }
         ref.read(expensesProvider.notifier).state = merged;
@@ -337,11 +355,24 @@ class DataHydrationService {
       final remoteHarvests = await repo.fetchHarvests(farmId: farmId);
       if (remoteHarvests.isNotEmpty) {
         final localHarvests = ref.read(harvestsProvider) as List<HarvestRecord>;
-        final seenIds = <String>{};
+        final localMap = {for (final h in localHarvests) h.id: h};
         final merged = <HarvestRecord>[];
-        for (final harv in [...localHarvests, ...remoteHarvests]) {
-          if (seenIds.add(harv.id)) {
-            merged.add(harv);
+        final handledIds = <String>{};
+
+        for (final rem in remoteHarvests) {
+          if (!handledIds.add(rem.id)) continue;
+          final loc = localMap[rem.id];
+          if (loc == null) {
+            merged.add(rem);
+          } else if (dirtyIds.contains(rem.id) || loc.date.isAfter(rem.date)) {
+            merged.add(loc);
+          } else {
+            merged.add(rem);
+          }
+        }
+        for (final loc in localHarvests) {
+          if (handledIds.add(loc.id)) {
+            merged.add(loc);
           }
         }
         ref.read(harvestsProvider.notifier).state = merged;
@@ -352,7 +383,7 @@ class DataHydrationService {
         final localPrices =
             ref.read(marketPricesProvider) as List<Map<String, dynamic>>;
         ref.read(marketPricesProvider.notifier).state =
-            _mergeMapsById(remotePrices, localPrices);
+            _mergeMapsById(remotePrices, localPrices, dirtyEntityIds: dirtyIds);
       }
 
       final remoteAbw = await repo.fetchAbwSamples();
@@ -360,7 +391,7 @@ class DataHydrationService {
         final localAbw =
             ref.read(abwSamplesProvider) as List<Map<String, dynamic>>;
         ref.read(abwSamplesProvider.notifier).state =
-            _mergeMapsById(remoteAbw, localAbw);
+            _mergeMapsById(remoteAbw, localAbw, dirtyEntityIds: dirtyIds);
       }
 
       await saveSnapshotToLocal(ref);
@@ -523,20 +554,131 @@ class DataHydrationService {
 
   List<Map<String, dynamic>> _mergeMapsById(
     List<Map<String, dynamic>> remote,
-    List<Map<String, dynamic>> local,
-  ) {
-    final seenIds = <String>{};
-    final merged = <Map<String, dynamic>>[];
+    List<Map<String, dynamic>> local, {
+    Set<String> dirtyEntityIds = const {},
+  }) {
+    final localById = <String, Map<String, dynamic>>{};
+    final localWithoutId = <Map<String, dynamic>>[];
 
-    for (final item in [...local, ...remote]) {
+    for (final item in local) {
       final id = item['id']?.toString();
-      if (id == null || id.isEmpty) {
-        merged.add(item);
-      } else if (seenIds.add(id)) {
-        merged.add(item);
+      if (id != null && id.isNotEmpty) {
+        localById[id] = item;
+      } else {
+        localWithoutId.add(item);
       }
     }
+
+    final merged = <Map<String, dynamic>>[];
+    final handledIds = <String>{};
+
+    // 1. Remote records are processed first (server authority for clean cache)
+    for (final remoteItem in remote) {
+      final id = remoteItem['id']?.toString();
+      if (id == null || id.isEmpty) {
+        merged.add(remoteItem);
+        continue;
+      }
+
+      if (!handledIds.add(id)) continue;
+
+      final localItem = localById[id];
+      if (localItem == null) {
+        merged.add(remoteItem);
+      } else {
+        // Both exist: resolve conflict
+        if (_shouldLocalWin(localItem, remoteItem, dirtyEntityIds: dirtyEntityIds)) {
+          merged.add(localItem);
+        } else {
+          merged.add(remoteItem);
+        }
+      }
+    }
+
+    // 2. Add local records that do not exist remotely (e.g. offline created items)
+    for (final localItem in local) {
+      final id = localItem['id']?.toString();
+      if (id != null && id.isNotEmpty && handledIds.add(id)) {
+        merged.add(localItem);
+      }
+    }
+
+    // 3. Add local items without ID
+    merged.addAll(localWithoutId);
+
     return merged;
+  }
+
+  @visibleForTesting
+  List<Map<String, dynamic>> mergeMapsById(
+    List<Map<String, dynamic>> remote,
+    List<Map<String, dynamic>> local, {
+    Set<String> dirtyEntityIds = const {},
+  }) =>
+      _mergeMapsById(remote, local, dirtyEntityIds: dirtyEntityIds);
+
+  bool _shouldLocalWin(
+    Map<String, dynamic> local,
+    Map<String, dynamic> remote, {
+    Set<String> dirtyEntityIds = const {},
+  }) {
+    final id = local['id']?.toString() ?? remote['id']?.toString();
+    if (id != null && dirtyEntityIds.contains(id)) {
+      // Local has pending uncommitted mutations in the offline outbox
+      return true;
+    }
+
+    // Version comparison
+    final localVersion = (local['version'] ??
+            local['base_version'] ??
+            local['baseVersion'] as num?)
+        ?.toInt();
+    final remoteVersion = (remote['version'] ??
+            remote['base_version'] ??
+            remote['baseVersion'] as num?)
+        ?.toInt();
+    if (localVersion != null && remoteVersion != null) {
+      if (localVersion > remoteVersion) return true;
+      if (remoteVersion > localVersion) return false;
+    }
+
+    // Timestamp comparison
+    final localTs = _extractTimestamp(local);
+    final remoteTs = _extractTimestamp(remote);
+    if (localTs != null && remoteTs != null) {
+      if (localTs.isAfter(remoteTs)) return true;
+      if (remoteTs.isAfter(localTs)) return false;
+    }
+
+    // Clean local cache loses to newer server state
+    return false;
+  }
+
+  DateTime? _extractTimestamp(Map<String, dynamic> map) {
+    const tsKeys = [
+      'updated_at',
+      'updatedAt',
+      'timestamp',
+      'created_at',
+      'createdAt',
+      'date',
+      'recorded_at',
+      'time',
+    ];
+    for (final key in tsKeys) {
+      final val = map[key];
+      if (val is String && val.isNotEmpty) {
+        final parsed = DateTime.tryParse(val);
+        if (parsed != null) return parsed;
+      } else if (val is int) {
+        if (val > 1000000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(val);
+        } else if (val > 1000000000) {
+          return DateTime.fromMillisecondsSinceEpoch(val * 1000);
+        }
+      }
+    }
+    return null;
   }
 
   void disposeRealtimeStreams() {
