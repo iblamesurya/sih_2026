@@ -30,5 +30,11 @@ key.properties
 __pycache__/
 *.py[cod]
 
+# Anti-reverse engineering tools & node dependencies
+node_modules/
+tools/
+.blarc
+**/.blarc
+
 # Test & coverage artifacts
 coverage/

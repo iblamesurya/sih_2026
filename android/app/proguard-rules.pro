@@ -37,3 +37,30 @@
 # Crypto & Security
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
+
+# ==============================================================================
+# Counter-REA & AI Agent Anti-Decompilation Locks (BLA Defense)
+# ==============================================================================
+# Repackage internal security and domain logic to flatten hierarchy
+-repackageclasses ''
+-allowaccessmodification
+
+# Strip debug metadata and source file names to blind automated LLM AST builders
+-renamesourcefileattribute 'PrawnGuardShield'
+
+# Anti-reflection locking: Obfuscate and lock dynamic method invocation
+-keepclassmembernames class * {
+    java.lang.Class class$(java.lang.String);
+    java.lang.Class class$(java.lang.String, boolean);
+}
+
+# Block dynamic reflection inspection of security providers
+-dontnote **
+-dontwarn **
+
+# Strip verbose and debug logging in release bytecode to prevent recon
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+}

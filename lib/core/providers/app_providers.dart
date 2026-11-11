@@ -17,6 +17,7 @@ import '../services/base_repository.dart';
 import '../services/farm_data_repository.dart';
 import '../services/emergency_alarm_service.dart';
 import '../services/data_hydration_service.dart';
+import '../security/anti_reverse_engineering_service.dart';
 import '../../features/finance/models/finance_models.dart';
 
 // ============================================================================
@@ -92,6 +93,12 @@ final emergencyAlarmServiceProvider = Provider<EmergencyAlarmService>((ref) {
 /// Provider for [DataHydrationService].
 final dataHydrationServiceProvider = Provider<DataHydrationService>((ref) {
   return DataHydrationService();
+});
+
+/// Provider for [AntiReverseEngineeringService] (Counter-REA AI Shield).
+final antiReverseEngineeringProvider =
+    Provider<AntiReverseEngineeringService>((ref) {
+  return AntiReverseEngineeringService();
 });
 
 // ============================================================================

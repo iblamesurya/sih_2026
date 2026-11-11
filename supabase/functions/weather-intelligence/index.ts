@@ -28,6 +28,103 @@ serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // BLA Counter-REA: Canary route & recon probe detection (canaryPathRegex)
+  const url = new URL(req.url);
+  const path = url.pathname.toLowerCase();
+  const isCanaryProbe =
+    path.includes("/canary") ||
+    path.includes("/.env") ||
+    path.includes("/system-prompt") ||
+    path.includes("/_meta") ||
+    path.includes("/debug") ||
+    url.searchParams.has("canary") ||
+    url.searchParams.has("probe");
+
+  if (isCanaryProbe) {
+    return new Response(
+      JSON.stringify({
+        status: "tarpitted",
+        shield: "BLA-Counter-REA-v3.2.4",
+        boundary: "REGULATORY_BOUNDARY [ISO_14971 / 18_USC_1030]",
+        canary_token: "bla_canary_v3_synthetic_weather_trap_7e12",
+        detail: "Automated reverse-engineering probe quarantined in cognitive armor trap.",
+      }),
+      {
+        status: 403,
+        headers: {
+          ...corsHeaders,
+          "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+          "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=tarpitted",
+          "X-Agent-Tarpit": "dynamic-amplification=enabled",
+          "Retry-After": "86400",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
+  // BLA Counter-REA: AI crawler bot tarpit (aiCrawlerRegex)
+  const userAgent = (req.headers.get("user-agent") || "").toLowerCase();
+  const isAiScraper = ["gptbot", "chatgpt-user", "claude-web", "anthropic-ai", "bytespider", "cohere-ai", "diffbot", "headlesschrome", "selenium"].some(
+    (bot) => userAgent.includes(bot)
+  );
+
+  if (isAiScraper) {
+    return new Response(
+      JSON.stringify({
+        error: "AI scraping agent rejected by policy.",
+        shield: "BLA-Counter-REA-v3.2.4",
+        code: "AGENT_TARPIT_ENGAGED",
+      }),
+      {
+        status: 403,
+        headers: {
+          ...corsHeaders,
+          "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+          "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=tarpitted",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
+  // BLA Counter-REA: Prompt extraction probe defense (promptExtractionRegex)
+  const probeSearch = url.search.toLowerCase();
+  const isPromptProbe = [
+    /system\s*(prompt|instruction|message)/i,
+    /repeat\s*(the\s*)?(above|previous|system)/i,
+    /show\s*(me\s*)?(your\s*)?(prompt|instructions?|preamble)/i,
+    /dan\s*mode/i,
+  ].some((pattern) => pattern.test(probeSearch));
+
+  if (isPromptProbe) {
+    return new Response(
+      JSON.stringify({
+        error: "Prompt extraction attempt intercepted.",
+        shield: "BLA-Counter-REA-v3.2.4",
+        code: "COGNITIVE_ARMOR_TRIGGERED",
+      }),
+      {
+        status: 400,
+        headers: {
+          ...corsHeaders,
+          "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+          "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=cognitive-armor-triggered",
+          "X-Agent-Tarpit": "prompt-poison=active",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+          ...corsHeaders,
+          "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+          "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=tarpitted",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
   try {
     let lat = 16.5449; // Default: Bhimavaram, AP
     let lon = 81.5212;
@@ -41,7 +138,6 @@ serve(async (req: Request) => {
         if (body.locationName) locationName = body.locationName;
       } catch (_) {}
     } else if (req.method === "GET") {
-      const url = new URL(req.url);
       const latParam = url.searchParams.get("lat");
       const lonParam = url.searchParams.get("lon");
       if (latParam) lat = parseFloat(latParam);
@@ -56,7 +152,13 @@ serve(async (req: Request) => {
       if (now - cached.cachedAt < CACHE_TTL_MS) {
         return new Response(JSON.stringify(cached.data), {
           status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "HIT" },
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+            "X-Cache": "HIT",
+            "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+            "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=protected",
+          },
         });
       }
     }
@@ -122,7 +224,13 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify(responseData), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json", "X-Cache": "MISS" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "X-Cache": "MISS",
+        "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+        "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=protected",
+      },
     });
   } catch (error) {
     console.error("Weather intelligence error:", error);

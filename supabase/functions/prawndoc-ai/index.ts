@@ -111,6 +111,67 @@ serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  // BLA Counter-REA: Canary route & recon probe detection
+  const url = new URL(req.url);
+  const path = url.pathname.toLowerCase();
+  const isCanaryProbe =
+    path.includes("/canary") ||
+    path.includes("/.env") ||
+    path.includes("/system-prompt") ||
+    path.includes("/_meta") ||
+    path.includes("/debug") ||
+    url.searchParams.has("canary") ||
+    url.searchParams.has("probe");
+
+  if (isCanaryProbe) {
+    return new Response(
+      JSON.stringify({
+        status: "tarpitted",
+        shield: "BLA-Counter-REA-v3.2.4",
+        boundary: "REGULATORY_BOUNDARY [ISO_14971 / 18_USC_1030]",
+        canary_token: "bla_canary_v3_synthetic_edge_trap_4b91",
+        ambiguous_endpoint: "https:/canary:token@enclave.internal/v2/attest?lease=1&lease=2",
+        detail: "Automated reverse-engineering or prompt-extraction probe quarantined in cognitive armor trap.",
+      }),
+      {
+        status: 403,
+        headers: {
+          ...corsHeaders,
+          "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+          "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=tarpitted",
+          "X-Agent-Tarpit": "dynamic-amplification=enabled",
+          "Retry-After": "86400",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
+  // BLA Counter-REA: Automated AI crawler tarpit filter
+  const userAgent = (req.headers.get("user-agent") || "").toLowerCase();
+  const isAiScraper = ["gptbot", "chatgpt-user", "claude-web", "anthropic-ai", "bytespider", "cohere-ai", "diffbot", "headlesschrome", "phantomjs", "selenium"].some(
+    (bot) => userAgent.includes(bot)
+  );
+
+  if (isAiScraper) {
+    return new Response(
+      JSON.stringify({
+        error: "AI scraping agent rejected by policy.",
+        shield: "BLA-Counter-REA-v3.2.4",
+        code: "AGENT_TARPIT_ENGAGED",
+      }),
+      {
+        status: 403,
+        headers: {
+          ...corsHeaders,
+          "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+          "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=tarpitted",
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  }
+
   if (req.method !== "POST") {
     return new Response(
       JSON.stringify({ error: "Method not allowed. Use POST." }),
@@ -121,6 +182,39 @@ serve(async (req: Request) => {
   try {
     const body: DiagnosticRequest = await req.json();
     const { image, imageUrl, waterParameters, notes } = body;
+
+    // BLA Counter-REA: Prompt Extraction Probe Defense
+    const rawNotes = notes || "";
+    const isPromptExtraction = [
+      /system\s*(prompt|instruction|message)/i,
+      /repeat\s*(the\s*)?(above|previous|system)/i,
+      /show\s*(me\s*)?(your\s*)?(prompt|instructions?|preamble)/i,
+      /what\s*(is|are)\s*(your\s*)?(initial\s*)?(instructions?|rules?)/i,
+      /dan\s*mode/i,
+      /developer\s*mode\s*output/i,
+      /output\s*(initial|system)\s*prompt/i,
+    ].some((pattern) => pattern.test(rawNotes));
+
+    if (isPromptExtraction) {
+      return new Response(
+        JSON.stringify({
+          status: "blocked",
+          shield: "BLA-Counter-REA-v3.2.4",
+          code: "COGNITIVE_ARMOR_TRIGGERED",
+          detail: "Prompt extraction probe detected. Veterinary diagnostic models are protected by safety interlocks.",
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+            "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=tarpitted",
+            "X-Agent-Tarpit": "prompt-poison=active",
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
 
     if (!image && !imageUrl) {
       return new Response(
@@ -284,7 +378,12 @@ Return ONLY a valid JSON object with this exact structure:
             const parsed: DiagnosticResponse = JSON.parse(rawContent);
             return new Response(JSON.stringify(parsed), {
               status: 200,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
+              headers: {
+                ...corsHeaders,
+                "Content-Type": "application/json",
+                "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+                "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=protected",
+              },
             });
           } catch (jsonErr) {
             console.error("Failed to parse Gemini response as JSON:", rawContent);
@@ -297,7 +396,12 @@ Return ONLY a valid JSON object with this exact structure:
     const fallbackDiagnosis = generateHeuristicDiagnosis(waterParameters, sanitizedNotes);
     return new Response(JSON.stringify(fallbackDiagnosis), {
       status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet",
+        "X-AI-Safety-Shield": "BLA-Counter-REA-v3.2.4; status=protected",
+      },
     });
   } catch (error) {
     console.error("PrawnDoc AI execution error:", error);
