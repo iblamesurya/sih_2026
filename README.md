@@ -120,12 +120,16 @@ sih_2026/
 ├── admin-dashboard/                 # React admin portal
 │   ├── Dockerfile                   # Production container
 │   └── src/
+├── docs/                            # Structured project documentation
+│   ├── architecture/                # Architecture guide & system specs
+│   ├── team/                        # Team assignments & work breakdown
+│   └── superpowers/                 # Historical specifications & plans
 ├── supabase/
 │   └── functions/                   # Edge Functions (Deno)
 │       ├── prawndoc-ai/
 │       └── weather-intelligence/
 ├── android/                         # Native Android config
-├── test/                            # 281 unit tests (6 tiers)
+├── test/                            # 296 unit/widget/e2e tests (6 tiers)
 ├── scripts/
 │   ├── build_release.ps1            # Release automation
 │   ├── generate_keystore.ps1        # Keystore generator
@@ -195,6 +199,14 @@ Bilingual support for English and Telugu:
 - `lib/l10n/en.json` — English strings
 - `lib/l10n/te.json` — Telugu strings
 - Runtime language switcher in Settings
+
+## 📚 Documentation
+
+Comprehensive project documentation is organized under the [`docs/`](docs/) directory:
+- [**Team Work Breakdown Specification**](docs/team/TEAM_WORK_BREAKDOWN.md) — Production-grade 5-developer work breakdown, multi-language contracts (TypeScript, Pydantic, JSON Schema, Dart), mock vs. live execution pathways, and step-by-step setup guides.
+- [**Team Assignments & Task Matrix**](docs/team/TEAM_ASSIGNMENTS.md) — Quick-reference 5-developer task boundaries, branch names, and PR workflow checklist.
+- [**Architecture & AI Agent Guide**](docs/architecture/APP_COMPLETE_GUIDE_FOR_AI_AGENT.md) — Deep Ocean Matte design tokens, 16 production services, and AI vision pipelines.
+- [**System Specification & Feature Inventory**](docs/architecture/PROJECT.md) — Architecture mapping, database schema, and pre-launch verification criteria.
 
 ## 📄 License
 

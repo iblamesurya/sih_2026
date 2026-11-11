@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import '../../../core/theme/app_theme.dart';
-import '../models/finance_models.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../models/finance_models.dart';
 
 class HarvestCard extends StatelessWidget {
   final HarvestRecord harvest;

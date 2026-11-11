@@ -88,14 +88,14 @@ class AdminPage extends ConsumerWidget {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.cardBorder),
             ),
-            child: Column(
+            child: const Column(
               children: [
                 _DiagRow(label: 'Supabase BaaS Status', value: 'Connected (RLS Enabled)', color: AppColors.secondary),
-                const Divider(height: 16),
+                Divider(height: 16),
                 _DiagRow(label: 'PrawnDoc Edge Function', value: 'Gemini Vision v2 Ready', color: AppColors.secondary),
-                const Divider(height: 16),
+                Divider(height: 16),
                 _DiagRow(label: 'Telugu Voice NLU Engine', value: 'On-Device Regex Active', color: AppColors.secondary),
-                const Divider(height: 16),
+                Divider(height: 16),
                 _DiagRow(label: 'Offline FIFO Queue Cap', value: '100 Mutations Max', color: AppColors.primary),
               ],
             ),

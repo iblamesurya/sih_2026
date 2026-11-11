@@ -113,6 +113,7 @@ class WeatherService {
 
   static WeatherData? _cachedWeather;
   static DateTime? _lastFetchTime;
+  static String? _cachedCoordKey;
   static const Duration cacheTtl = Duration(hours: 3);
 
   WeatherService([this._httpClient]);
@@ -122,6 +123,7 @@ class WeatherService {
   static void clearCache() {
     _cachedWeather = null;
     _lastFetchTime = null;
+    _cachedCoordKey = null;
   }
 
   /// Fetches weather intelligence via Supabase Edge Function `weather-intelligence`
@@ -132,7 +134,11 @@ class WeatherService {
     bool forceRefresh = false,
   }) async {
     final now = DateTime.now();
-    if (!forceRefresh && _cachedWeather != null && _lastFetchTime != null) {
+    final coordKey = '${lat.toStringAsFixed(2)},${lon.toStringAsFixed(2)}';
+    if (!forceRefresh &&
+        _cachedWeather != null &&
+        _lastFetchTime != null &&
+        _cachedCoordKey == coordKey) {
       if (now.difference(_lastFetchTime!) < cacheTtl) {
         return _cachedWeather!;
       }
@@ -154,6 +160,7 @@ class WeatherService {
             );
             _cachedWeather = weather;
             _lastFetchTime = now;
+            _cachedCoordKey = coordKey;
             return weather;
           }
         }
@@ -169,6 +176,7 @@ class WeatherService {
     final fallback = WeatherData.defaultFallback();
     _cachedWeather = fallback;
     _lastFetchTime = now;
+    _cachedCoordKey = coordKey;
     return fallback;
   }
 

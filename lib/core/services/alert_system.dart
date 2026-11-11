@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// Severity levels for water quality telemetry and system alerts.
 enum AlertSeverity {
   optimal,
@@ -48,9 +50,27 @@ class WaterAlert {
 }
 
 /// Alert System evaluating aquaculture telemetry parameters against
-/// established Vannamei / Monodon scientific thresholds.
+/// established ICAR-CIBA & MPEDA Vannamei / Monodon scientific thresholds.
 class AlertSystem {
   const AlertSystem();
+
+  /// Computes toxic Un-ionized Ammonia (NH3 in mg/L) from Total Ammonia Nitrogen (TAN in mg/L),
+  /// pond pH, and water temperature (°C) using the Emerson et al. (1975) dissociation model:
+  /// - pKa = 0.09018 + (2729.92 / (T_c + 273.15))
+  /// - fraction NH3 = 1 / (1 + 10^(pKa - pH))
+  /// - Un-ionized NH3 (mg/L) = TAN * fraction NH3
+  double calculateUnIonizedNh3FromTan({
+    required double tanMgL,
+    required double ph,
+    required double temperatureC,
+  }) {
+    if (tanMgL <= 0) return 0.0;
+    final tempK = temperatureC.clamp(10.0, 45.0) + 273.15;
+    final pKa = 0.09018 + (2729.92 / tempK);
+    final fractionNh3 = 1.0 / (1.0 + math.pow(10.0, pKa - ph.clamp(5.0, 11.0)));
+    final nh3 = tanMgL * fractionNh3;
+    return double.parse(nh3.toStringAsFixed(4));
+  }
 
   /// Evaluates all provided water parameters and returns a list of [WaterAlert]s.
   List<WaterAlert> evaluateParameters({
@@ -162,9 +182,9 @@ class AlertSystem {
         unit: 'mg/L',
         severity: AlertSeverity.urgent,
         message: 'Critical Hypoxia Risk ($dissolvedOxygen mg/L)! Immediate shrimp asphyxiation risk.',
-        recommendation: 'Activate 100% aerators immediately. Apply hydrogen peroxide or oxygen tablets emergency booster.',
+        recommendation: 'Activate 100% aerators immediately. Apply Sodium Percarbonate (2-3 kg/acre) emergency oxygen booster.',
         teluguMessage: 'తీవ్రమైన ఆక్సిజన్ కొరత ($dissolvedOxygen mg/L)! రొయ్యలు ఊపిరాడక చనిపోయే ప్రమాదం.',
-        teluguRecommendation: 'అన్ని ఎయిరేటర్లను వెంటనే ఆన్ చేయండి. ఆక్సిజన్ మాత్రలు వేయండి.',
+        teluguRecommendation: 'అన్ని ఎయిరేటర్లను వెంటనే ఆన్ చేయండి. ఎకరాకు 2-3 కిలోల ఆక్సిజన్ మాత్రలు వేయండి.',
       );
     } else if (dissolvedOxygen <= 4.0) {
       return WaterAlert(
@@ -191,7 +211,7 @@ class AlertSystem {
     }
   }
 
-  /// Evaluates Total / Un-ionized Ammonia ($NH_3$) in mg/L:
+  /// Evaluates Un-ionized Ammonia (NH3) in mg/L (where 0.10 mg/L NH3 ≈ 1.2 mg/L TAN at pH 8.0, 29°C):
   /// - Urgent: > 0.1 mg/L
   /// - Watch: 0.05 - 0.1 mg/L
   /// - Optimal: < 0.05 mg/L
@@ -202,10 +222,13 @@ class AlertSystem {
         value: ammonia,
         unit: 'mg/L',
         severity: AlertSeverity.urgent,
-        message: 'Toxic Ammonia Spike ($ammonia mg/L)! Severe gill damage and mortality risk.',
-        recommendation: 'Perform 20% bottom water exchange, stop feeding for 1 meal, apply Yucca extract and nitrifying bacteria.',
-        teluguMessage: 'తీవ్రమైన విషపూరిత అమ్మోనియా ($ammonia mg/L)! మొప్పల దెబ్బతినే ప్రమాదం.',
-        teluguRecommendation: '20% కింద నీటిని మార్చండి, ఒక పూట మేత ఆపండి, యుక్కా మరియు నైట్రిఫైయింగ్ ప్రోబయోటిక్స్ వేయండి.',
+        message:
+            'Toxic Un-ionized Ammonia Spike ($ammonia mg/L NH3; >1.2 ppm TAN eq.)! Severe gill damage and mortality risk.',
+        recommendation:
+            'Perform 20% bottom water exchange, stop feeding for 1 meal, apply Yucca extract + Zeolite (25 kg/acre) and nitrifying bacteria.',
+        teluguMessage: 'తీవ్రమైన విషపూరిత అమ్మోనియా ($ammonia mg/L NH3)! మొప్పలు దెబ్బతినే ప్రమాదం.',
+        teluguRecommendation:
+            '20% కింద నీటిని మార్చండి, ఒక పూట మేత ఆపండి, యుక్కా, జియోలైట్ మరియు నైట్రిఫైయింగ్ ప్రోబయోటిక్స్ వేయండి.',
       );
     } else if (ammonia >= 0.05) {
       return WaterAlert(
@@ -213,9 +236,9 @@ class AlertSystem {
         value: ammonia,
         unit: 'mg/L',
         severity: AlertSeverity.watch,
-        message: 'Elevated Ammonia ($ammonia mg/L). Organic waste accumulation detected.',
+        message: 'Elevated Un-ionized Ammonia ($ammonia mg/L NH3). Organic waste accumulation detected.',
         recommendation: 'Reduce daily feed by 15% and apply concentrated Bacillus soil probiotics.',
-        teluguMessage: 'అమ్మోనియా పెరుగుతోంది ($ammonia mg/L). వ్యర్థాలు పేరుకుపోతున్నాయి.',
+        teluguMessage: 'అమ్మోనియా పెరుగుతోంది ($ammonia mg/L NH3). వ్యర్థాలు పేరుకుపోతున్నాయి.',
         teluguRecommendation: 'మేతను 15% తగ్గించి, బాసిల్లస్ ప్రోబయోటిక్స్ వేయండి.',
       );
     } else {
@@ -224,17 +247,17 @@ class AlertSystem {
         value: ammonia,
         unit: 'mg/L',
         severity: AlertSeverity.optimal,
-        message: 'Safe Ammonia level ($ammonia mg/L). Clean pond bottom ecosystem.',
+        message: 'Safe Un-ionized Ammonia level ($ammonia mg/L NH3). Clean pond bottom ecosystem.',
         recommendation: 'Maintain regular sludge removal and bi-weekly probiotic dosing.',
-        teluguMessage: 'సురక్షితమైన అమ్మోనియా స్థాయి ($ammonia mg/L).',
+        teluguMessage: 'సురక్షితమైన అమ్మోనియా స్థాయి ($ammonia mg/L NH3).',
         teluguRecommendation: 'చెరువు అడుగుభాగాన్ని శుభ్రంగా ఉంచుకోండి.',
       );
     }
   }
 
-  /// Evaluates Alkalinity ($CaCO_3$) in mg/L:
+  /// Evaluates Alkalinity (CaCO3) in mg/L:
   /// - Watch: < 100 mg/L or > 200 mg/L
-  /// - Optimal: 100 - 150 mg/L (acceptable up to 200 mg/L)
+  /// - Optimal: 100 - 150 mg/L
   WaterAlert evaluateAlkalinity(double alkalinity) {
     if (alkalinity < 100) {
       return WaterAlert(
@@ -242,7 +265,7 @@ class AlertSystem {
         value: alkalinity,
         unit: 'mg/L',
         severity: AlertSeverity.watch,
-        message: 'Low Alkalinity ($alkalinity mg/L). Inadequate buffer causes wild pH swings.',
+        message: 'Low Alkalinity ($alkalinity mg/L). Inadequate buffer causes wild pH swings and soft shell.',
         recommendation: 'Apply sodium bicarbonate (NaHCO3) at 10-15 kg/acre or dolomite to raise above 120 mg/L.',
         teluguMessage: 'క్షారత్వం తక్కువగా ఉంది ($alkalinity mg/L). pH హెచ్చుతగ్గులు ఏర్పడతాయి.',
         teluguRecommendation: 'ఎకరాకు 10-15 కిలోల సోడియం బైకార్బోనేట్ (సోడా) లేదా డోలమైట్ వేయండి.',
@@ -274,7 +297,7 @@ class AlertSystem {
 
   /// Evaluates Salinity in ppt:
   /// - Watch: < 5 ppt or > 35 ppt
-  /// - Optimal: 10 - 25 ppt (acceptable 5 - 35 ppt)
+  /// - Optimal: 5 - 35 ppt
   WaterAlert evaluateSalinity(double salinity) {
     if (salinity < 5.0 || salinity > 35.0) {
       return WaterAlert(
@@ -283,16 +306,16 @@ class AlertSystem {
         unit: 'ppt',
         severity: AlertSeverity.watch,
         message: salinity < 5.0
-            ? 'Low Salinity ($salinity ppt). Osmotic stress risk during molting.'
+            ? 'Low Inland Salinity ($salinity ppt). Osmotic stress risk during molting (common in Kolleru/Godavari borewell ponds).'
             : 'High Salinity ($salinity ppt). Retarded growth rate and high mineral stress.',
         recommendation: salinity < 5.0
-            ? 'Supplement with magnesium and potassium chloride salts.'
+            ? 'Supplement Muriate of Potash (KCl @ 10 kg/acre) and Magnesium Sulfate (MgSO4 @ 15 kg/acre) to maintain Mg:Ca:K = 3:1:1.'
             : 'Dilute with low-salinity freshwater if available.',
         teluguMessage: salinity < 5.0
-            ? 'ఉప్పు శాతం తక్కువగా ఉంది ($salinity ppt).'
+            ? 'ఉప్పు శాతం తక్కువగా ఉంది ($salinity ppt). కుబుసం విడిచే సమయంలో ఒత్తిడి.'
             : 'ఉప్పు శాతం అధికంగా ఉంది ($salinity ppt).',
         teluguRecommendation: salinity < 5.0
-            ? 'మెగ్నీషియం, పొటాషియం ఖనిజాలను అందించండి.'
+            ? 'ఎకరాకు 10 కిలోల పొటాష్ (KCl) మరియు 15 కిలోల మెగ్నీషియం సల్ఫేట్ అందించండి.'
             : 'సాధ్యమైతే మంచి నీటిని కలపండి.',
       );
     } else {
@@ -311,7 +334,7 @@ class AlertSystem {
 
   /// Evaluates Water Temperature in °C:
   /// - Urgent: < 22°C or > 34°C
-  /// - Watch: 22 - 25°C or 32 - 34°C
+  /// - Watch: 22 - 26°C or 32 - 34°C
   /// - Optimal: 26 - 32°C
   WaterAlert evaluateTemperature(double temp) {
     if (temp < 22.0 || temp > 34.0) {
@@ -321,11 +344,11 @@ class AlertSystem {
         unit: '°C',
         severity: AlertSeverity.urgent,
         message: temp < 22.0
-            ? 'Critical Low Temperature ($temp°C). Shrimp metabolic cessation.'
-            : 'Critical High Temperature ($temp°C). Extreme oxygen depletion and pathogen proliferation.',
+            ? 'Critical Low Temperature ($temp°C). Shrimp metabolic cessation & WSSV risk.'
+            : 'Critical High Temperature ($temp°C). Extreme oxygen depletion and Vibrio proliferation.',
         recommendation: temp < 22.0
             ? 'Cut feed by 50% immediately to prevent feed decay.'
-            : 'Run aerators, increase pond water depth, cut feed by 30%.',
+            : 'Run aerators, increase pond water depth to 1.5m, cut afternoon feed by 30%.',
         teluguMessage: temp < 22.0
             ? 'ఉష్ణోగ్రత చాలా తక్కువగా ఉంది ($temp°C).'
             : 'ఉష్ణోగ్రత చాలా ఎక్కువగా ఉంది ($temp°C).',

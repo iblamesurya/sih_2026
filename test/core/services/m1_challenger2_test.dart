@@ -311,16 +311,16 @@ void main() {
 
       for (int i = 0; i < invalidInputs.length; i++) {
         final input = invalidInputs[i];
-        test('rejects adversarial input #' + (i + 1).toString(), () {
+        test('rejects adversarial input #${i + 1}', () {
           expect(
             () => AuthService.normalizePhone(input),
             throwsArgumentError,
-            reason: 'Expected normalizePhone to reject invalid input at index ' + i.toString(),
+            reason: 'Expected normalizePhone to reject invalid input at index $i',
           );
           expect(
             () => AuthService.phoneToEmail(input),
             throwsArgumentError,
-            reason: 'Expected phoneToEmail to reject invalid input at index ' + i.toString(),
+            reason: 'Expected phoneToEmail to reject invalid input at index $i',
           );
         });
       }

@@ -107,9 +107,14 @@ class _AddPondModalState extends ConsumerState<AddPondModal> {
 
     final offlineSync = ref.read(offlineSyncProvider);
     await offlineSync.enqueue({
-      'type': 'INSERT_POND',
-      'pond_data': newPond,
+      'table': 'ponds',
+      'action': 'insert',
+      'payload': newPond,
     });
+    await ref
+        .read(dataHydrationServiceProvider)
+        .refreshPendingSyncCount(ref, offlineSync: offlineSync);
+    await ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

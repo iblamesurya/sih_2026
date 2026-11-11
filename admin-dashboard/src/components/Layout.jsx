@@ -16,6 +16,7 @@ import {
   ExternalLink,
   ChevronRight
 } from 'lucide-react';
+import ErrorBoundary from './ErrorBoundary';
 
 const NAV_ITEMS = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -183,9 +184,14 @@ export default function Layout() {
           </div>
         </header>
 
-        {/* Page View Outlet */}
+        {/* Page View Outlet with Error Boundary */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          <ErrorBoundary
+            title="Module Render Error"
+            description="The active view encountered a problem. The command sidebar and navigation remain operational."
+          >
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

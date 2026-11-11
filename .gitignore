@@ -25,3 +25,10 @@ key.properties
 .env.local
 .env.production
 .env.staging
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+
+# Test & coverage artifacts
+coverage/

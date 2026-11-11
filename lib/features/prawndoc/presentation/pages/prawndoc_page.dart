@@ -59,63 +59,104 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
     _SpecimenPreset(
       name: 'White Spot Syndrome Virus (WSSV)',
       disease: ShrimpDisease.wssv,
-      symptomsNotes: 'White calcified spots (0.5-2.0mm) visible inside carapace, reddish body discoloration, lethargic surface swimming along pond dykes.',
+      symptomsNotes:
+          'White calcified spots (0.5-2.0mm) visible inside carapace, reddish body discoloration, lethargic surface swimming along pond dykes.',
       tag: 'White Spots',
       color: Color(0xFFE55C5C),
     ),
     _SpecimenPreset(
       name: 'AHPND / Early Mortality Syndrome (EMS)',
       disease: ShrimpDisease.ahpnd,
-      symptomsNotes: 'Pale, atrophied and shrunken hepatopancreas, empty gut and stomach within DOC 30, high sudden mortality at pond bottom.',
+      symptomsNotes:
+          'Pale, atrophied and shrunken hepatopancreas, empty gut and stomach within DOC 30, high sudden mortality at pond bottom.',
       tag: 'Pale HP',
       color: Color(0xFFE5B05C),
     ),
     _SpecimenPreset(
       name: 'EHP Microsporidian Parasite',
       disease: ShrimpDisease.ehp,
-      symptomsNotes: 'Severe growth retardation, wide size variation across cohort, soft shell, poor FCR despite normal feed intake.',
+      symptomsNotes:
+          'Severe growth retardation, wide size variation across cohort, soft shell, poor FCR despite normal feed intake.',
       tag: 'Stunted Growth',
       color: Color(0xFFFFA726),
     ),
     _SpecimenPreset(
       name: 'White Faeces Syndrome (WFS)',
       disease: ShrimpDisease.wfs,
-      symptomsNotes: 'White stringy fecal strands floating on pond surface, pale white gut line, hepatopancreas softening.',
+      symptomsNotes:
+          'White stringy fecal strands floating on pond surface, pale white gut line, hepatopancreas softening.',
       tag: 'White Faeces',
       color: Color(0xFFEF5350),
     ),
     _SpecimenPreset(
+      name: 'Running Mortality Syndrome (RMS)',
+      disease: ShrimpDisease.rms,
+      symptomsNotes:
+          'Chronic daily dead shrimp in check trays and pond bottom after DOC 40, reddish uropods and opaque abdominal segments.',
+      tag: 'Running Mortality',
+      color: Color(0xFFD84315),
+    ),
+    _SpecimenPreset(
       name: 'Black Gill Disease (Melanization)',
       disease: ShrimpDisease.blackGill,
-      symptomsNotes: 'Brownish-black melanized discoloration of branchial gill filaments, labored swimming and oxygen stress.',
+      symptomsNotes:
+          'Brownish-black melanized discoloration of branchial gill filaments, labored swimming and oxygen stress.',
       tag: 'Black Gills',
       color: Color(0xFF8D6E63),
     ),
     _SpecimenPreset(
       name: 'Infectious Myonecrosis (IMNV)',
       disease: ShrimpDisease.imnv,
-      symptomsNotes: 'Opaque whitish necrosis in distal abdominal muscle and tail fan, cooked red tail appearance.',
+      symptomsNotes:
+          'Opaque whitish necrosis in distal abdominal muscle and tail fan, cooked red tail appearance.',
       tag: 'Muscle Necrosis',
       color: Color(0xFFAB47BC),
     ),
     _SpecimenPreset(
       name: 'Vibriosis / Luminescent Bacteria',
       disease: ShrimpDisease.vibriosis,
-      symptomsNotes: 'Greenish bioluminescence in shrimp body observed in dark, melanized lesions on appendages.',
+      symptomsNotes:
+          'Greenish bioluminescence in shrimp body observed in dark, melanized lesions on appendages.',
       tag: 'Luminescence',
       color: Color(0xFF26A69A),
     ),
     _SpecimenPreset(
       name: 'Loose Shell Syndrome (LSS)',
       disease: ShrimpDisease.lss,
-      symptomsNotes: 'Soft, spongy, loose exoskeleton with gap between muscle and shell, mineral deficiency.',
+      symptomsNotes:
+          'Soft, spongy, loose exoskeleton with gap between muscle and shell, mineral deficiency.',
       tag: 'Loose Shell',
       color: Color(0xFF78909C),
     ),
     _SpecimenPreset(
+      name: 'Yellow Head Virus (YHV)',
+      disease: ShrimpDisease.yhv,
+      symptomsNotes:
+          'Pale yellowish discoloration of cephalothorax and hepatopancreas, erratic surface swimming.',
+      tag: 'Yellow Head',
+      color: Color(0xFFFBC02D),
+    ),
+    _SpecimenPreset(
+      name: 'Cotton Shrimp / Microsporidiosis',
+      disease: ShrimpDisease.microsporidiosis,
+      symptomsNotes:
+          'Chalky milky-white opaque abdominal muscle coloration resembling cooked cotton.',
+      tag: 'Cotton Shrimp',
+      color: Color(0xFF90CAF9),
+    ),
+    _SpecimenPreset(
+      name: 'Gill Turbidity / Tail & Fin Rot',
+      disease: ShrimpDisease.gillTurbidity,
+      symptomsNotes:
+          'Silt-clogged muddy gills and frayed necrotic uropod tail fan edges.',
+      tag: 'Gill Turbidity',
+      color: Color(0xFFA1887F),
+    ),
+    _SpecimenPreset(
       name: 'Healthy Specimen (No Pathologies)',
       disease: ShrimpDisease.healthy,
-      symptomsNotes: 'Translucent exoskeleton, clear hepatopancreas pigmentation, full and continuous gut line, active antenna.',
+      symptomsNotes:
+          'Translucent exoskeleton, clear hepatopancreas pigmentation, full and continuous gut line, active antenna.',
       tag: 'Healthy',
       color: Color(0xFF10B981),
     ),
@@ -126,6 +167,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
     {'label': 'Black / Brown Gills', 'disease': ShrimpDisease.blackGill, 'icon': '🟤'},
     {'label': 'White Faeces Strands', 'disease': ShrimpDisease.wfs, 'icon': '⚪'},
     {'label': 'Pale / Shrunken HP', 'disease': ShrimpDisease.ahpnd, 'icon': '🟡'},
+    {'label': 'Running Mortality (RMS)', 'disease': ShrimpDisease.rms, 'icon': '⚠️'},
     {'label': 'Soft Spongy Shell', 'disease': ShrimpDisease.lss, 'icon': '🦐'},
     {'label': 'Night Luminescence', 'disease': ShrimpDisease.vibriosis, 'icon': '💡'},
     {'label': 'Stunted Growth (EHP)', 'disease': ShrimpDisease.ehp, 'icon': '📉'},
@@ -190,12 +232,14 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
         _suspectedDisease = disease;
       }
 
+      final currentText = _notesController.text.trim();
       if (_selectedSymptoms.isNotEmpty) {
-        final currentText = _notesController.text.trim();
         final symptomsText = 'Observed: ${_selectedSymptoms.join(", ")}';
         if (currentText.isEmpty || currentText.startsWith('Observed:')) {
           _notesController.text = symptomsText;
         }
+      } else if (currentText.startsWith('Observed:')) {
+        _notesController.clear();
       }
     });
   }
@@ -218,6 +262,15 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
     final scans = ref.read(diseaseScansProvider);
     final waterLogs = ref.read(waterLogsProvider);
 
+    final now = DateTime.now();
+    final scansToday = scans.where((s) {
+      final ts = DateTime.tryParse(s['scanned_at']?.toString() ?? '');
+      return ts != null &&
+          ts.year == now.year &&
+          ts.month == now.month &&
+          ts.day == now.day;
+    }).length;
+
     // Extract real RAG telemetry from selected pond if available
     double ph = 7.85;
     double dissolvedOxygen = 4.8;
@@ -227,17 +280,22 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
     int doc = 45;
 
     if (_selectedPondId != null) {
-      final pondLogs = waterLogs.where((l) => l['pond_id']?.toString() == _selectedPondId).toList();
+      final pondLogs =
+          waterLogs.where((l) => l['pond_id']?.toString() == _selectedPondId).toList();
       if (pondLogs.isNotEmpty) {
         final latest = pondLogs.first;
         ph = (latest['ph'] as num?)?.toDouble() ?? ph;
-        dissolvedOxygen = (latest['dissolved_oxygen'] as num?)?.toDouble() ?? dissolvedOxygen;
+        dissolvedOxygen =
+            (latest['dissolved_oxygen'] as num?)?.toDouble() ?? dissolvedOxygen;
         salinity = (latest['salinity'] as num?)?.toDouble() ?? salinity;
         ammonia = (latest['ammonia'] as num?)?.toDouble() ?? ammonia;
         temperature = (latest['temperature'] as num?)?.toDouble() ?? temperature;
       }
       final ponds = ref.read(pondListProvider);
-      final pond = ponds.firstWhere((p) => p['id']?.toString() == _selectedPondId, orElse: () => {});
+      final pond = ponds.firstWhere(
+        (p) => p['id']?.toString() == _selectedPondId,
+        orElse: () => {},
+      );
       doc = (pond['doc'] as num?)?.toInt() ?? 45;
     }
 
@@ -256,7 +314,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
         ammonia: ammonia,
         temperature: temperature,
         doc: doc,
-        currentScansToday: scans.length,
+        currentScansToday: scansToday,
         isPro: subscriptionTier == SubscriptionTier.pro,
       );
 
@@ -267,7 +325,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
 
       // Record to scans provider and offline queue
       final scanRecord = {
-        'id': 'scan_${DateTime.now().millisecondsSinceEpoch}',
+        'id': 'scan_${now.millisecondsSinceEpoch}',
         'pond_id': _selectedPondId ?? 'unassigned',
         'disease': result.diseaseName,
         'severity': result.severity,
@@ -275,16 +333,21 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
         'description': result.description,
         'immediate_action': result.immediateAction,
         'telugu_summary': result.teluguSummary,
-        'scanned_at': DateTime.now().toIso8601String(),
+        'scanned_at': now.toIso8601String(),
       };
 
       ref.read(diseaseScansProvider.notifier).state = [scanRecord, ...scans];
 
       final offlineSync = ref.read(offlineSyncProvider);
       await offlineSync.enqueue({
-        'type': 'INSERT_DISEASE_SCAN',
-        'scan_data': scanRecord,
+        'table': 'disease_scans',
+        'action': 'insert',
+        'payload': scanRecord,
       });
+      await ref
+          .read(dataHydrationServiceProvider)
+          .refreshPendingSyncCount(ref, offlineSync: offlineSync);
+      await ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
     } catch (e) {
       setState(() => _isAnalyzing = false);
       if (mounted) {
@@ -303,6 +366,7 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final ponds = ref.watch(pondListProvider);
+    final scans = ref.watch(diseaseScansProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -520,8 +584,14 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                         const Icon(Icons.camera_alt_outlined, size: 44, color: AppColors.primary),
                         const SizedBox(height: 10),
                         Text(
-                          isTelugu ? 'రొయ్య ఫోటో తీయండి లేదా గ్యాలరీ నుండి ఎంచుకోండి' : 'Capture shrimp photo or select from gallery',
-                          style: GoogleFonts.spaceGrotesk(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                          isTelugu
+                              ? 'రొయ్య ఫోటో తీయండి లేదా గ్యాలరీ నుండి ఎంచుకోండి'
+                              : 'Capture shrimp photo or select from gallery',
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
@@ -579,7 +649,9 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                 DropdownButtonFormField<_SpecimenPreset>(
                   initialValue: null,
                   hint: Text(
-                    isTelugu ? 'లేదా పరీక్ష కోసం నమూనాను ఎంచుకోండి' : 'Or load sample pathology preset for testing',
+                    isTelugu
+                        ? 'లేదా పరీక్ష కోసం నమూనాను ఎంచుకోండి'
+                        : 'Or load sample pathology preset for testing',
                     style: GoogleFonts.outfit(color: AppColors.textTertiary, fontSize: 12),
                   ),
                   dropdownColor: AppColors.surfaceElevated,
@@ -601,7 +673,8 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                                 Container(
                                   width: 8,
                                   height: 8,
-                                  decoration: BoxDecoration(color: p.color, shape: BoxShape.circle),
+                                  decoration:
+                                      BoxDecoration(color: p.color, shape: BoxShape.circle),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(p.name, style: const TextStyle(fontSize: 12)),
@@ -617,7 +690,9 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
 
                 // Interactive Visual Symptom Chips
                 Text(
-                  isTelugu ? 'గమనించిన శారీరక లక్షణాలు (ట్యాప్ చేయండి):' : 'Observed Visual Pathology Signs (Tap to tag):',
+                  isTelugu
+                      ? 'గమనించిన శారీరక లక్షణాలు (ట్యాప్ చేయండి):'
+                      : 'Observed Visual Pathology Signs (Tap to tag):',
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -658,7 +733,9 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                 DropdownButtonFormField<String>(
                   initialValue: _selectedPondId,
                   hint: Text(
-                    isTelugu ? 'చెరువును ఎంచుకోండి (RAG నీటి నాణ్యత కోసం)' : 'Select Pond for Water RAG Context',
+                    isTelugu
+                        ? 'చెరువును ఎంచుకోండి (RAG నీటి నాణ్యత కోసం)'
+                        : 'Select Pond for Water RAG Context',
                     style: GoogleFonts.outfit(color: AppColors.textSecondary, fontSize: 13),
                   ),
                   dropdownColor: AppColors.surfaceElevated,
@@ -666,7 +743,8 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
-                    labelText: isTelugu ? 'నీటి పారామితుల RAG చెరువు' : 'Target Pond Water RAG Context',
+                    labelText:
+                        isTelugu ? 'నీటి పారామితుల RAG చెరువు' : 'Target Pond Water RAG Context',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: const BorderSide(color: AppColors.cardBorder),
@@ -723,7 +801,10 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.background),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.background,
+                            ),
                           )
                         : const Icon(Icons.biotech, size: 20),
                     label: Text(
@@ -790,13 +871,15 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: (_diagnosisResult!.severity == 'high' || _diagnosisResult!.severity == 'critical'
+                          color: (_diagnosisResult!.severity == 'high' ||
+                                      _diagnosisResult!.severity == 'critical'
                                   ? AppColors.alertUrgent
                                   : AppColors.secondary)
                               .withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
-                            color: _diagnosisResult!.severity == 'high' || _diagnosisResult!.severity == 'critical'
+                            color: _diagnosisResult!.severity == 'high' ||
+                                    _diagnosisResult!.severity == 'critical'
                                 ? AppColors.alertUrgent
                                 : AppColors.secondary,
                           ),
@@ -806,7 +889,8 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                           style: GoogleFonts.spaceGrotesk(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: _diagnosisResult!.severity == 'high' || _diagnosisResult!.severity == 'critical'
+                            color: _diagnosisResult!.severity == 'high' ||
+                                    _diagnosisResult!.severity == 'critical'
                                 ? AppColors.alertUrgent
                                 : AppColors.secondary,
                           ),
@@ -839,15 +923,23 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(
-                          _diagnosisResult!.disease == ShrimpDisease.healthy ? Icons.check_circle : Icons.warning_amber,
+                          _diagnosisResult!.disease == ShrimpDisease.healthy
+                              ? Icons.check_circle
+                              : Icons.warning_amber,
                           size: 16,
-                          color: _diagnosisResult!.disease == ShrimpDisease.healthy ? AppColors.secondary : AppColors.alertUrgent,
+                          color: _diagnosisResult!.disease == ShrimpDisease.healthy
+                              ? AppColors.secondary
+                              : AppColors.alertUrgent,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             _diagnosisResult!.immediateAction,
-                            style: GoogleFonts.outfit(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],
@@ -874,7 +966,15 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text('• ', style: TextStyle(color: AppColors.primary)),
-                            Expanded(child: Text(item, style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary))),
+                            Expanded(
+                              child: Text(
+                                item,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -886,7 +986,15 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text('• ', style: TextStyle(color: AppColors.secondary)),
-                            Expanded(child: Text(item, style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary))),
+                            Expanded(
+                              child: Text(
+                                item,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -923,7 +1031,10 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                         const SizedBox(height: 4),
                         Text(
                           _diagnosisResult!.teluguSummary,
-                          style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary),
+                          style: GoogleFonts.outfit(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
                       ],
                     ),
@@ -939,7 +1050,9 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                             foregroundColor: AppColors.primary,
                             side: const BorderSide(color: AppColors.primary),
                             padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                           onPressed: () {
                             context.push('/finance');
@@ -947,7 +1060,10 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                           icon: const Icon(Icons.account_balance_wallet, size: 16),
                           label: Text(
                             isTelugu ? 'ఖర్చులలో చేర్చండి' : 'Log Treatment Cost',
-                            style: GoogleFonts.spaceGrotesk(fontSize: 12, fontWeight: FontWeight.bold),
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -958,12 +1074,16 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                             backgroundColor: AppColors.secondary,
                             foregroundColor: AppColors.background,
                             padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                           ),
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Pathology Report exported to Farm Records & WhatsApp!'),
+                                content: Text(
+                                  'Pathology Report exported to Farm Records & WhatsApp!',
+                                ),
                                 backgroundColor: AppColors.secondary,
                               ),
                             );
@@ -971,7 +1091,10 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                           icon: const Icon(Icons.share, size: 16),
                           label: Text(
                             isTelugu ? 'నివేదిక షేర్' : 'Share Report',
-                            style: GoogleFonts.spaceGrotesk(fontSize: 12, fontWeight: FontWeight.bold),
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
@@ -980,6 +1103,81 @@ class _PrawnDocPageState extends ConsumerState<PrawnDocPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+          ],
+
+          // Recent Diagnostic Scan History Section
+          if (scans.isNotEmpty) ...[
+            Text(
+              isTelugu ? 'ఇటీవలి స్కాన్ చరిత్ర' : 'Recent Diagnostic Scans (${scans.length})',
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...scans.take(5).map((scan) {
+              final diseaseName = (scan['disease'] ?? 'Specimen Scan').toString();
+              final severity = (scan['severity'] ?? 'medium').toString();
+              final conf = (((scan['confidence'] as num?)?.toDouble() ?? 0.85) * 100).round();
+              final isCrit = severity == 'critical' || severity == 'high';
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.cardBorder),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            diseaseName,
+                            style: GoogleFonts.spaceGrotesk(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            (scan['telugu_summary'] ?? scan['immediate_action'] ?? '').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: (isCrit ? AppColors.alertUrgent : AppColors.secondary)
+                            .withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$conf% • ${severity.toUpperCase()}',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isCrit ? AppColors.alertUrgent : AppColors.secondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ],
           const SizedBox(height: 30),
         ],

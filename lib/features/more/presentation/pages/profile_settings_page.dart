@@ -63,11 +63,15 @@ class _ProfileSettingsPageState extends ConsumerState<ProfileSettingsPage> {
   }
 
   void _saveProfile() {
+    final existingUser = ref.read(currentUserProvider) ?? <String, dynamic>{};
+    final existingFarm = ref.read(currentFarmProvider) ?? <String, dynamic>{};
     ref.read(currentUserProvider.notifier).state = {
+      ...existingUser,
       'name': _nameController.text.trim(),
       'phone': _phoneController.text.trim(),
     };
     ref.read(currentFarmProvider.notifier).state = {
+      ...existingFarm,
       'farmName': _farmNameController.text.trim(),
       'district': _districtController.text.trim(),
     };

@@ -22,6 +22,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
   final _salinityController = TextEditingController(text: '18.0');
   final _tempController = TextEditingController(text: '28.5');
   final _ammoniaController = TextEditingController(text: '0.04');
+  final _alkalinityController = TextEditingController(text: '130.0');
   final _feedController = TextEditingController(text: '25.0');
   final _voiceInputController = TextEditingController();
 
@@ -43,6 +44,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
     _salinityController.dispose();
     _tempController.dispose();
     _ammoniaController.dispose();
+    _alkalinityController.dispose();
     _feedController.dispose();
     _voiceInputController.dispose();
     super.dispose();
@@ -51,11 +53,20 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
   void _parseVoice(String transcript) {
     final nluService = ref.read(teluguVoiceNluProvider);
     final parsed = nluService.parseVoiceInput(transcript);
+    final ponds = ref.read(pondListProvider);
 
     setState(() {
       _detectedTeluguPhrase = transcript;
       if (parsed.pondIndex != null) {
-        _selectedPondId = parsed.pondIndex.toString();
+        final idx = parsed.pondIndex!;
+        if (ponds.isNotEmpty && idx >= 1 && idx <= ponds.length) {
+          _selectedPondId = ponds[idx - 1]['id']?.toString() ?? idx.toString();
+        } else {
+          final match = ponds.where((p) => p['id']?.toString() == idx.toString());
+          if (match.isNotEmpty || ponds.isEmpty) {
+            _selectedPondId = idx.toString();
+          }
+        }
       }
       if (parsed.ph != null) {
         _phController.text = parsed.ph.toString();
@@ -71,6 +82,9 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
       }
       if (parsed.ammonia != null) {
         _ammoniaController.text = parsed.ammonia.toString();
+      }
+      if (parsed.alkalinity != null) {
+        _alkalinityController.text = parsed.alkalinity.toString();
       }
       if (parsed.feedKg != null) {
         _feedController.text = parsed.feedKg.toString();
@@ -89,6 +103,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
   }
 
   Future<void> _submitTelemetry() async {
+    if (!_formKey.currentState!.validate()) return;
     final alertSystem = ref.read(alertSystemProvider);
     final offlineSync = ref.read(offlineSyncProvider);
     final currentLogs = ref.read(waterLogsProvider);
@@ -96,15 +111,19 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
     final ph = double.tryParse(_phController.text) ?? 7.8;
     final doLevel = double.tryParse(_doController.text) ?? 4.8;
     final ammonia = double.tryParse(_ammoniaController.text) ?? 0.04;
+    final alkalinity = double.tryParse(_alkalinityController.text) ?? 130.0;
     final salinity = double.tryParse(_salinityController.text) ?? 18.0;
     final temp = double.tryParse(_tempController.text) ?? 28.5;
     final feedKg = double.tryParse(_feedController.text) ?? 25.0;
 
-    // Evaluate water parameters for critical/watch threshold breaches
+    // Evaluate all 6 water parameters for critical/watch threshold breaches
     final alerts = alertSystem.evaluateParameters(
       ph: ph,
       dissolvedOxygen: doLevel,
       ammonia: ammonia,
+      alkalinity: alkalinity,
+      salinity: salinity,
+      temperature: temp,
     );
 
     // Update active alerts in state
@@ -119,6 +138,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
       'salinity': salinity,
       'temperature': temp,
       'ammonia': ammonia,
+      'alkalinity': alkalinity,
       'feed_kg': feedKg,
       'timestamp': DateTime.now().toIso8601String(),
     };
@@ -126,11 +146,27 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
     // Update in-memory state so Ponds and Home pages update reactively
     ref.read(waterLogsProvider.notifier).state = [newLog, ...currentLogs];
 
-    // Enqueue mutation for persistent Supabase sync
+    // Evaluate life-safety emergency alarms (nocturnal hypoxia / toxic ammonia)
+    final emergencyAlarms =
+        ref.read(emergencyAlarmServiceProvider).evaluateWaterLog(newLog);
+    if (emergencyAlarms.isNotEmpty) {
+      final existingAlarms = ref.read(activeEmergencyAlarmsProvider);
+      ref.read(activeEmergencyAlarmsProvider.notifier).state = [
+        ...emergencyAlarms,
+        ...existingAlarms,
+      ];
+    }
+
+    // Enqueue mutation for persistent Supabase sync using canonical schema
     await offlineSync.enqueue({
-      'type': 'INSERT_WATER_LOG',
-      'log_data': newLog,
+      'table': 'water_logs',
+      'action': 'insert',
+      'payload': newLog,
     });
+    await ref
+        .read(dataHydrationServiceProvider)
+        .refreshPendingSyncCount(ref, offlineSync: offlineSync);
+    await ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -214,7 +250,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                             ),
                             Text(
                               isTelugu
-                                  ? 'ఉదా: "చెరువు 2 లో pH 7.8, DO 5.2, మేత 25 kg"'
+                                  ? 'ఉదా: "చెరువు ఒకటిలో పీహెచ్ 7.9 ఉంది, ఆక్సిజన్ 4.8, అమ్మోనియా సున్నా, మేత 30 కేజీలు వేసాను"'
                                   : 'Speak in Telugu or mixed English naturally',
                               style: GoogleFonts.outfit(
                                 fontSize: 12,
@@ -234,6 +270,16 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                     child: Row(
                       children: [
                         _VoiceSampleChip(
+                          label: 'చెరువు ఒకటిలో పీహెచ్ 7.9, ఆక్సిజన్ 4.8',
+                          onTap: () {
+                            const text =
+                                'చెరువు ఒకటిలో పీహెచ్ 7.9 ఉంది, ఆక్సిజన్ 4.8, అమ్మోనియా సున్నా, మేత 30 కేజీలు వేసాను';
+                            _voiceInputController.text = text;
+                            _parseVoice(text);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _VoiceSampleChip(
                           label: 'చెరువు 2: pH 7.8, DO 5.2',
                           onTap: () {
                             const text = 'చెరువు 2 లో pH 7.8, DO 5.2, feed 25 kg';
@@ -245,7 +291,7 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                         _VoiceSampleChip(
                           label: 'Pond 1: Salinity 15, Ammonia 0.04',
                           onTap: () {
-                            const text = 'Pond 1 lo salinity 15 ppt ammonia 0.04';
+                            const text = 'Pond 1 lo salinity 15 ppt ammonia 0.04 alkalinity 135';
                             _voiceInputController.text = text;
                             _parseVoice(text);
                           },
@@ -352,7 +398,8 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
 
             // Target Pond Selector Dropdown
             DropdownButtonFormField<String>(
-              value: _selectedPondId,
+              key: ValueKey(_selectedPondId),
+              initialValue: _selectedPondId,
               dropdownColor: AppColors.surfaceElevated,
               style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary, fontSize: 14),
               decoration: InputDecoration(
@@ -449,13 +496,21 @@ class _TelemetryLoggingPageState extends ConsumerState<TelemetryLoggingPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _InputField(
-                    controller: _feedController,
-                    label: isTelugu ? 'మేత పరిమాణం (kg)' : 'Feed Applied (kg)',
-                    hintText: '25.0',
+                    controller: _alkalinityController,
+                    label: isTelugu ? 'ఆల్కలినిటీ (ppm)' : 'Alkalinity (ppm)',
+                    hintText: '100 - 150 ppm',
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+
+            _InputField(
+              controller: _feedController,
+              label: isTelugu ? 'మేత పరిమాణం (kg)' : 'Feed Applied (kg)',
+              hintText: '25.0',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
             const SizedBox(height: 24),
 

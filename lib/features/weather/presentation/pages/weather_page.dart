@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
 import '../../../../core/services/weather_service.dart';
+import '../../../../core/services/emergency_alarm_service.dart';
 
 /// Aquaculture Weather & Hypoxia Advisory Page (/weather).
 /// Connected to live WeatherService with cached OpenWeatherMap telemetry and hypoxia scoring.
@@ -47,17 +48,99 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
 
       final hypoxia = weatherService.evaluateHypoxiaRisk(weather);
 
-      setState(() {
-        _weather = weather;
-        _hypoxia = hypoxia;
-        _isLoading = false;
-      });
+      if (hypoxia.riskScore >= 75) {
+        final alarm = ref.read(emergencyAlarmServiceProvider).evaluateHypoxiaForecast(
+              riskScore: hypoxia.riskScore,
+              locationName: location.locationName,
+              triggerSoundAndHaptics: true,
+            );
+        if (alarm != null) {
+          final existing = List<EmergencyAlarm>.from(ref.read(activeEmergencyAlarmsProvider));
+          final alreadyQueued = existing.any(
+            (a) => a.parameter == 'Nocturnal Hypoxia Risk' && !a.acknowledged,
+          );
+          if (!alreadyQueued) {
+            existing.insert(0, alarm);
+            ref.read(activeEmergencyAlarmsProvider.notifier).state = existing;
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _weather = weather;
+          _hypoxia = hypoxia;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  void _triggerMidnightHypoxiaSimulation(bool isTelugu, String displayedLocation) {
+    final simulatedWeather = WeatherData(
+      temperature: 31.8,
+      feelsLike: 36.2,
+      humidity: 88,
+      cloudCover: 92,
+      windSpeed: 2.1,
+      rainfall: 14.5,
+      condition: 'Rain',
+      description: 'heavy overcast & stagnant air (3:00 AM pre-dawn)',
+      locationName: displayedLocation,
+      timestamp: DateTime.now(),
+    );
+    final hypoxia = ref.read(weatherServiceProvider).evaluateHypoxiaRisk(simulatedWeather);
+    final alarm = EmergencyAlarm(
+      id: 'alarm_midnight_hypoxia_${DateTime.now().millisecondsSinceEpoch}',
+      pondId: 'all',
+      pondName: displayedLocation,
+      parameter: 'Nocturnal Hypoxia Risk',
+      measuredValue: '${hypoxia.riskScore}% Risk Index (DO < 3.0 mg/L)',
+      title: '3:00 AM Emergency Alert: Midnight DO Crash Risk! Turn ON all Aerators immediately',
+      teluguTitle:
+          'అత్యవసర హెచ్చరిక: అర్ధరాత్రి ఆక్సిజన్ పడిపోయే ప్రమాదం ఉంది! వెంటనే ఏరేటర్లు ఆన్ చేయండి',
+      checklist: const [
+        'Turn ON all paddlewheel and spiral aerators at 100% capacity immediately.',
+        'Broadcast Sodium Percarbonate (Oxygen tablets/granules) @ 2–3 kg/acre.',
+        'HALT all feeding meals immediately until DO stabilizes above 4.5 mg/L.',
+        'Start emergency borewell/reservoir water exchange (15–20%) if available.',
+      ],
+      teluguChecklist: const [
+        'తక్షణమే అన్ని ఏరేటర్లను (Paddlewheel Aerators) పూర్తి స్థాయిలో ఆన్ చేయండి.',
+        'ఎకరానికి 2–3 కిలోల ఆక్సిజన్ టాబ్లెట్లు/గ్రాన్యూల్స్ (Sodium Percarbonate) చల్లండి.',
+        'DO 4.5 mg/L దాటే వరకు మేత వేయడం పూర్తిగా ఆపివేయండి.',
+        'అందుబాటులో ఉంటే 15–20% కొత్త నీటిని చెరువులోకి పంపండి.',
+      ],
+      triggeredAt: DateTime.now(),
+    );
+
+    ref.read(emergencyAlarmServiceProvider).triggerDeviceAlert();
+    final activeAlarms = List<EmergencyAlarm>.from(ref.read(activeEmergencyAlarmsProvider));
+    activeAlarms.insert(0, alarm);
+    ref.read(activeEmergencyAlarmsProvider.notifier).state = activeAlarms;
+
+    setState(() {
+      _weather = simulatedWeather;
+      _hypoxia = hypoxia;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isTelugu
+              ? 'అత్యవసర హెచ్చరిక: అర్ధరాత్రి ఆక్సిజన్ పడిపోయే ప్రమాదం ఉంది! వెంటనే ఏరేటర్లు ఆన్ చేయండి'
+              : '3:00 AM Hypoxia Siren Triggered! Check Emergency Checklist below.',
+        ),
+        backgroundColor: AppColors.alertUrgent,
+      ),
+    );
   }
 
   @override
@@ -66,6 +149,10 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
     final isTelugu = locale.languageCode == 'te';
     final farm = ref.watch(currentFarmProvider);
     final currentLoc = ref.watch(currentLocationCoordinatesProvider);
+    final activeAlarms = ref
+        .watch(activeEmergencyAlarmsProvider)
+        .where((a) => !a.acknowledged)
+        .toList();
     final displayedLocation = currentLoc != null
         ? currentLoc.locationName
         : (farm?['district'] ?? 'Bhimavaram, Andhra Pradesh');
@@ -113,6 +200,110 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
                       style: GoogleFonts.outfit(color: AppColors.alertUrgent, fontSize: 13),
                     ),
                   ),
+
+                // Active Emergency Siren Banner (if triggered)
+                if (activeAlarms.isNotEmpty) ...[
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 18),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF281114),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.alertUrgent, width: 2),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.notifications_active,
+                              color: AppColors.alertUrgent,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                isTelugu
+                                    ? activeAlarms.first.teluguTitle
+                                    : activeAlarms.first.title,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.alertUrgent,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        ...(isTelugu
+                                ? activeAlarms.first.teluguChecklist
+                                : activeAlarms.first.checklist)
+                            .map(
+                          (step) => Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.check_circle_outline,
+                                  size: 15,
+                                  color: AppColors.alertWatch,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    step,
+                                    style: GoogleFonts.outfit(
+                                      fontSize: 12,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.alertUrgent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: () {
+                              final all = List<EmergencyAlarm>.from(
+                                ref.read(activeEmergencyAlarmsProvider),
+                              );
+                              final updated = all
+                                  .map((a) => a.id == activeAlarms.first.id
+                                      ? a.copyWith(acknowledged: true)
+                                      : a)
+                                  .toList();
+                              ref.read(activeEmergencyAlarmsProvider.notifier).state = updated;
+                            },
+                            icon: const Icon(Icons.volume_off, size: 18),
+                            label: Text(
+                              isTelugu
+                                  ? 'ఏరేటర్లు ఆన్ చేసాను (సైరన్ ఆపండి)'
+                                  : 'Aerators Turned ON — Acknowledge Siren',
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // Current Weather Hero Card
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -277,14 +468,42 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
                             ),
                           )),
                         ],
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.alertUrgent,
+                              side: const BorderSide(color: AppColors.alertUrgent),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: () => _triggerMidnightHypoxiaSimulation(
+                              isTelugu,
+                              displayedLocation,
+                            ),
+                            icon: const Icon(Icons.crisis_alert, size: 18),
+                            label: Text(
+                              isTelugu
+                                  ? '3:00 AM హైపోక్సియా అత్యవసర సైరన్ పరీక్షించండి'
+                                  : 'Simulate 3:00 AM Midnight Hypoxia Emergency Siren',
+                              style: GoogleFonts.spaceGrotesk(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 20),
 
-                // 7-Day Aquaculture Forecast Section
+                // 5-Day Aquaculture Forecast Section
                 Text(
-                  isTelugu ? '7-రోజుల ఆక్వా ఫోర్‌కాస్ట్' : '5-Day Coastal Aquaculture Forecast',
+                  isTelugu ? '5-రోజుల ఆక్వా ఫోర్‌కాస్ట్' : '5-Day Coastal Aquaculture Forecast',
                   style: GoogleFonts.spaceGrotesk(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -297,8 +516,10 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
                   final now = DateTime.now().add(Duration(days: index));
                   final dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][now.weekday % 7];
                   final baseTemp = _weather?.temperature ?? 29.5;
+                  final baseRain = _weather?.rainfall ?? 0.0;
+                  final baseClouds = _weather?.cloudCover ?? 35;
                   final temp = (baseTemp + (index.isEven ? 0.4 : -0.3)).toStringAsFixed(1);
-                  final isRain = index == 2 || index == 4;
+                  final isRain = index == 0 ? baseRain > 0.5 : (baseClouds > 65 ? index.isOdd : index == 3);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -331,7 +552,7 @@ class _WeatherPageState extends ConsumerState<WeatherPage> {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              isRain ? 'Rain 40% • Watch Aerators' : 'Clear Sky • Optimal Aeration',
+                              isRain ? 'Rain Expected • Watch Aerators' : 'Clear Sky • Optimal Aeration',
                               style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary),
                             ),
                           ],

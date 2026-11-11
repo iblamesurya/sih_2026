@@ -1,14 +1,31 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
+import '../../../../core/widgets/shimmer_skeleton.dart';
+import '../../../../core/widgets/error_view.dart';
 
 /// Ponds Overview & Management Page (Tab 1).
-class PondListPage extends ConsumerWidget {
+class PondListPage extends ConsumerStatefulWidget {
   const PondListPage({super.key});
+
+  @override
+  ConsumerState<PondListPage> createState() => _PondListPageState();
+}
+
+class _PondListPageState extends ConsumerState<PondListPage> {
+  bool _isLoading = false;
+
+  Future<void> _refresh() async {
+    setState(() => _isLoading = true);
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
 
   void _loadDemoPonds(WidgetRef ref) {
     ref.read(pondListProvider.notifier).state = [
@@ -45,6 +62,7 @@ class PondListPage extends ConsumerWidget {
         'salinity': 18.0,
         'temperature': 28.5,
         'ammonia': 0.04,
+        'alkalinity': 140.0,
         'feed_kg': 25.0,
         'timestamp': DateTime.now().subtract(const Duration(hours: 3)).toIso8601String(),
       },
@@ -56,18 +74,22 @@ class PondListPage extends ConsumerWidget {
         'salinity': 17.5,
         'temperature': 28.0,
         'ammonia': 0.02,
+        'alkalinity': 145.0,
         'feed_kg': 22.0,
         'timestamp': DateTime.now().subtract(const Duration(hours: 4)).toIso8601String(),
       },
     ];
+    ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final ponds = ref.watch(pondListProvider);
     final waterLogs = ref.watch(waterLogsProvider);
+    final pendingSync = ref.watch(pendingSyncCountProvider);
+    final isOffline = pendingSync > 0;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -100,84 +122,112 @@ class PondListPage extends ConsumerWidget {
         ),
         onPressed: () => context.push('/add-pond'),
       ),
-      body: ponds.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.cardBorder),
-                      ),
-                      child: const Icon(Icons.water, size: 48, color: AppColors.primary),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      isTelugu ? 'చెరువులేవీ లేవు' : 'No Ponds Found',
-                      style: GoogleFonts.spaceGrotesk(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      isTelugu
-                          ? 'మీ ఆక్వాకల్చర్ చెరువులను నమోదు చేసి నీటి నాణ్యతను ట్రాక్ చేయండి.'
-                          : 'Register your shrimp culture ponds to track telemetry and feed schedules.',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.outfit(
-                        fontSize: 13,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: AppColors.background,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          onPressed: () => context.push('/add-pond'),
-                          icon: const Icon(Icons.add),
-                          label: Text(
-                            isTelugu ? 'చెరువును జోడించండి' : 'Add Pond',
-                            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.secondary,
-                            side: const BorderSide(color: AppColors.secondary),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          onPressed: () => _loadDemoPonds(ref),
-                          icon: const Icon(Icons.science_outlined),
-                          label: Text(
-                            'Load Demo Data',
-                            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: ponds.length,
+      body: Column(
+        children: [
+          if (isOffline)
+            OfflineStatusBar(
+              isOffline: true,
+              isTelugu: isTelugu,
+              onSyncNow: () async {
+                final sync = ref.read(offlineSyncProvider);
+                await sync.drainQueue();
+                final hydration = ref.read(dataHydrationServiceProvider);
+                await hydration.refreshPendingSyncCount(ref);
+              },
+            ),
+          Expanded(
+            child: _isLoading
+                ? const SkeletonList(
+                    skeletonItem: PondCardSkeleton(),
+                    count: 3,
+                  )
+                : RefreshIndicator(
+                    onRefresh: _refresh,
+                    color: AppColors.primary,
+                    backgroundColor: AppColors.surface,
+                    child: ponds.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(height: 60),
+                                    Container(
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.surface,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: AppColors.cardBorder),
+                                      ),
+                                      child: const Icon(Icons.water, size: 48, color: AppColors.primary),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    Text(
+                                      isTelugu ? 'చెరువులేవీ లేవు' : 'No Ponds Found',
+                                      style: GoogleFonts.spaceGrotesk(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      isTelugu
+                                          ? 'మీ ఆక్వాకల్చర్ చెరువులను నమోదు చేసి నీటి నాణ్యతను ట్రాక్ చేయండి.'
+                                          : 'Register your shrimp culture ponds to track telemetry and feed schedules.',
+                                      textAlign: TextAlign.center,
+                                      style: GoogleFonts.outfit(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.primary,
+                                            foregroundColor: AppColors.background,
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                          onPressed: () => context.push('/add-pond'),
+                                          icon: const Icon(Icons.add),
+                                          label: Text(
+                                            isTelugu ? 'చెరువును జోడించండి' : 'Add Pond',
+                                            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: AppColors.secondary,
+                                            side: const BorderSide(color: AppColors.secondary),
+                                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                          onPressed: () => _loadDemoPonds(ref),
+                                          icon: const Icon(Icons.science_outlined),
+                                          label: Text(
+                                            'Load Demo Data',
+                                            style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: ponds.length,
               itemBuilder: (context, index) {
                 final pond = ponds[index];
                 final pondId = pond['id']?.toString() ?? '${index + 1}';
@@ -191,6 +241,7 @@ class PondListPage extends ConsumerWidget {
                 final latestLog = pondLogs.isNotEmpty ? pondLogs.first : null;
 
                 String status = 'Optimal';
+                String teluguStatus = 'Optimal (సురక్షితం)';
                 Color statusColor = AppColors.secondary;
 
                 if (latestLog != null) {
@@ -200,9 +251,11 @@ class PondListPage extends ConsumerWidget {
 
                   if (doVal < 3.5 || phVal < 7.0 || phVal > 9.0 || nh3Val > 0.1) {
                     status = 'Urgent';
+                    teluguStatus = 'Urgent (ప్రమాదం)';
                     statusColor = AppColors.alertUrgent;
                   } else if (doVal < 4.0 || phVal < 7.5 || phVal > 8.5 || nh3Val > 0.05) {
                     status = 'Watch';
+                    teluguStatus = 'Watch (జాగ్రత్త)';
                     statusColor = AppColors.alertWatch;
                   }
                 }
@@ -254,7 +307,7 @@ class PondListPage extends ConsumerWidget {
                                   border: Border.all(color: statusColor),
                                 ),
                                 child: Text(
-                                  status,
+                                  isTelugu ? teluguStatus : status,
                                   style: GoogleFonts.spaceGrotesk(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
@@ -298,8 +351,12 @@ class PondListPage extends ConsumerWidget {
                 );
               },
             ),
-    );
-  }
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }
 
 class _PondMetricItem extends StatelessWidget {

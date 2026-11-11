@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -17,6 +17,7 @@ class MorePage extends ConsumerWidget {
     final isTelugu = locale.languageCode == 'te';
     final subscriptionTier = ref.watch(currentSubscriptionTierProvider);
     final offlineSync = ref.watch(offlineSyncProvider);
+    final pendingSyncCount = ref.watch(pendingSyncCountProvider);
     final user = ref.watch(currentUserProvider);
     final farm = ref.watch(currentFarmProvider);
 
@@ -171,6 +172,7 @@ class MorePage extends ConsumerWidget {
                   onChanged: (val) {
                     ref.read(currentLocaleProvider.notifier).state =
                         val ? const Locale('te') : const Locale('en');
+                    ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
                   },
                 ),
               ],
@@ -179,6 +181,20 @@ class MorePage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // Navigation Hub Items
+          _SettingsTile(
+            icon: Icons.trending_up,
+            iconColor: AppColors.secondary,
+            title: isTelugu ? 'లైవ్ రొయ్యల మండి ధరలు' : 'Live AP Shrimp Mandi Rates',
+            subtitle: isTelugu ? 'భీమవరం, నెల్లూరు ధరలు & హార్వెస్ట్ ఆప్టిమైజర్' : 'Daily count rates (30c–100c) & harvest optimizer',
+            onTap: () => context.push('/market-prices'),
+          ),
+          _SettingsTile(
+            icon: Icons.straighten,
+            iconColor: AppColors.primary,
+            title: isTelugu ? 'AI కెమెరా రొయ్య బరువు (ABW)' : 'AI Camera ABW & Count Sizing',
+            subtitle: isTelugu ? 'ట్రే ఫోటో ద్వారా రొయ్య బరువు మరియు కౌంట్' : 'Non-destructive check-tray sizing & EHP CV%',
+            onTap: () => context.push('/abw-sampling'),
+          ),
           _SettingsTile(
             icon: Icons.cloud_outlined,
             iconColor: AppColors.primary,
@@ -238,7 +254,9 @@ class MorePage extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isTelugu ? 'ఆఫ్‌లైన్ సమకాలీకరణ' : 'Offline Sync Queue',
+                      isTelugu
+                          ? 'ఆఫ్‌లైన్ సమకాలీకరణ ($pendingSyncCount పెండింగ్)'
+                          : 'Offline Sync Queue ($pendingSyncCount pending)',
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -259,6 +277,9 @@ class MorePage extends ConsumerWidget {
                   ),
                   onPressed: () async {
                     await offlineSync.drainQueue();
+                    await ref
+                        .read(dataHydrationServiceProvider)
+                        .refreshPendingSyncCount(ref, offlineSync: offlineSync);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -286,16 +307,21 @@ class MorePage extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            onPressed: () {
-              // Sign out and clear state
+            onPressed: () async {
+              // Sign out from Supabase Auth and clear Riverpod state
+              try {
+                await ref.read(authServiceProvider).signOut();
+              } catch (_) {}
               ref.clearUserData();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Signed out successfully. User state cleared.'),
-                  backgroundColor: AppColors.alertUrgent,
-                ),
-              );
-              context.go('/login');
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Signed out successfully. User state cleared.'),
+                    backgroundColor: AppColors.alertUrgent,
+                  ),
+                );
+                context.go('/login');
+              }
             },
             icon: const Icon(Icons.logout, size: 18),
             label: Text(

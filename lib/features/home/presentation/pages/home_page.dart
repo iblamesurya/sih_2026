@@ -7,6 +7,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
 import '../../../../core/services/subscription_service.dart';
 import '../../../../core/services/weather_service.dart';
+import '../../../../core/services/emergency_alarm_service.dart';
 
 /// Main Home / Dashboard page of PrawnGuard.ai (Tab 0).
 class HomePage extends ConsumerStatefulWidget {
@@ -49,11 +50,111 @@ class _HomePageState extends ConsumerState<HomePage> {
     } catch (_) {}
   }
 
+  void _showEmergencyAlarmModal(EmergencyAlarm alarm, bool isTelugu) {
+    final checklist = isTelugu ? alarm.teluguChecklist : alarm.checklist;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.campaign, color: AppColors.alertUrgent, size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      isTelugu ? alarm.teluguTitle : alarm.title,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.alertUrgent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              ...checklist.map(
+                (step) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.check_circle_outline,
+                        color: AppColors.primary,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          step,
+                          style: GoogleFonts.outfit(
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.secondary,
+                    foregroundColor: AppColors.background,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    final all = ref.read(activeEmergencyAlarmsProvider);
+                    ref.read(activeEmergencyAlarmsProvider.notifier).state = all
+                        .map((a) => a.id == alarm.id ? a.copyWith(acknowledged: true) : a)
+                        .toList();
+                    Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.verified, size: 18),
+                  label: Text(
+                    isTelugu
+                        ? 'ఏరేటర్లు ఆన్ చేయబడ్డాయి (Acknowledge)'
+                        : 'Acknowledge — Aerators & Remediation Active',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final alerts = ref.watch(alertsProvider);
+    final emergencyAlarms = ref
+        .watch(activeEmergencyAlarmsProvider)
+        .where((a) => !a.acknowledged)
+        .toList();
+    final pendingSyncCount = ref.watch(pendingSyncCountProvider);
     final ponds = ref.watch(pondListProvider);
     final farm = ref.watch(currentFarmProvider);
     final feedPlan = ref.watch(activeFeedPlanProvider);
@@ -148,6 +249,112 @@ class _HomePageState extends ConsumerState<HomePage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Active Unacknowledged Life-Safety Emergency Alarm Banner
+          if (emergencyAlarms.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.alertUrgent.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.alertUrgent, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.campaign, color: AppColors.alertUrgent, size: 28),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isTelugu
+                              ? emergencyAlarms.first.teluguTitle
+                              : emergencyAlarms.first.title,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.alertUrgent,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isTelugu
+                              ? 'అత్యవసర ఏరేటర్ ప్రోటోకాల్ చూడటానికి నొక్కండి'
+                              : 'Tap to open emergency aerator & lime checklist',
+                          style: GoogleFonts.outfit(
+                            fontSize: 11,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        _showEmergencyAlarmModal(emergencyAlarms.first, isTelugu),
+                    child: Text(
+                      isTelugu ? 'ప్రోటోకాల్' : 'Protocol',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.alertUrgent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // Pending Offline Sync Status Strip
+          if (pendingSyncCount > 0)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.cloud_upload_outlined, color: AppColors.primary, size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        isTelugu
+                            ? '$pendingSyncCount ఆఫ్‌లైన్ రీడింగ్‌లు సింక్ కోసం సిద్ధంగా ఉన్నాయి'
+                            : '$pendingSyncCount offline readings queued for cloud sync',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      final sync = ref.read(offlineSyncProvider);
+                      await sync.drainQueue();
+                      await ref
+                          .read(dataHydrationServiceProvider)
+                          .refreshPendingSyncCount(ref, offlineSync: sync);
+                    },
+                    child: Text(
+                      isTelugu ? 'సింక్' : 'Sync Now',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Urgent Alert Notification Banner
           if (alerts.any((a) => a.isUrgent))
             Container(
@@ -251,7 +458,9 @@ class _HomePageState extends ConsumerState<HomePage> {
                         const SizedBox(height: 4),
                         Text(
                           _hypoxia != null
-                              ? 'Hypoxia Risk: ${_hypoxia!.riskLevel.toUpperCase()} • ${_hypoxia!.actions.isNotEmpty ? _hypoxia!.actions.first : _hypoxia!.advisorySummary}'
+                              ? (isTelugu
+                                  ? 'హైపోక్సియా ప్రమాదం: ${_hypoxia!.riskLevel.toUpperCase()} • ${_hypoxia!.teluguActions.isNotEmpty ? _hypoxia!.teluguActions.first : _hypoxia!.teluguSummary}'
+                                  : 'Hypoxia Risk: ${_hypoxia!.riskLevel.toUpperCase()} • ${_hypoxia!.actions.isNotEmpty ? _hypoxia!.actions.first : _hypoxia!.advisorySummary}')
                               : (isTelugu
                                   ? 'హైపోక్సియా ప్రమాదం: తక్కువ (ఏరేటర్లు సరిపోతాయి)'
                                   : 'Hypoxia Risk: Low • Standard aeration optimal'),
@@ -320,6 +529,106 @@ class _HomePageState extends ConsumerState<HomePage> {
                 title: isTelugu ? 'ఫైనాన్స్ & క్రెడిట్' : 'PrawnCredit',
                 subtitle: isTelugu ? 'ఖర్చులు & అమ్మకాలు' : 'Cashflow ledger',
                 onTap: () => context.push('/finance'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Live AP Mandi Rates & AI Camera ABW Strip
+          Row(
+            children: [
+              Expanded(
+                child: InkWell(
+                  onTap: () => context.push('/market-prices'),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.secondary.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.trending_up, color: AppColors.secondary, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isTelugu ? 'మండి ధరలు (30c)' : 'AP Mandi (30c)',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                isTelugu ? '₹390/kg • భీమవరం' : '₹390/kg • Bhimavaram',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 11,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: InkWell(
+                  onTap: () => context.push('/abw-sampling'),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.straighten, color: AppColors.primary, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isTelugu ? 'AI కెమెరా ABW' : 'Camera ABW Size',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                isTelugu ? 'ట్రే ఫోటో కౌంట్' : 'Tray count & CV%',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.outfit(
+                                  fontSize: 11,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -562,20 +871,55 @@ class _HomePageState extends ConsumerState<HomePage> {
                 ),
                 const SizedBox(height: 12),
                 if (feedPlan != null)
-                  Row(
-                    children: [
-                      _MealPill(time: '06:00 AM', share: '${feedPlan.meal1Kg.toStringAsFixed(1)} kg (20%)', isCompleted: true),
-                      const SizedBox(width: 8),
-                      _MealPill(time: '11:00 AM', share: '${feedPlan.meal2Kg.toStringAsFixed(1)} kg (30%)', isCompleted: true),
-                      const SizedBox(width: 8),
-                      _MealPill(time: '04:00 PM', share: '${feedPlan.meal3Kg.toStringAsFixed(1)} kg (30%)', isCompleted: false),
-                      const SizedBox(width: 8),
-                      _MealPill(time: '09:00 PM', share: '${feedPlan.meal4Kg.toStringAsFixed(1)} kg (20%)', isCompleted: false),
-                    ],
+                  Builder(
+                    builder: (context) {
+                      final completedMeals = ref.watch(completedMealsProvider);
+                      void toggleMeal(int mealNum) {
+                        final next = Set<int>.from(completedMeals);
+                        if (next.contains(mealNum)) {
+                          next.remove(mealNum);
+                        } else {
+                          next.add(mealNum);
+                        }
+                        ref.read(completedMealsProvider.notifier).state = next;
+                      }
+
+                      return Row(
+                        children: [
+                          _MealPill(
+                            time: '06:00 AM',
+                            share: '${feedPlan.meal1Kg.toStringAsFixed(1)} kg (20%)',
+                            isCompleted: completedMeals.contains(1),
+                            onTap: () => toggleMeal(1),
+                          ),
+                          const SizedBox(width: 8),
+                          _MealPill(
+                            time: '11:00 AM',
+                            share: '${feedPlan.meal2Kg.toStringAsFixed(1)} kg (30%)',
+                            isCompleted: completedMeals.contains(2),
+                            onTap: () => toggleMeal(2),
+                          ),
+                          const SizedBox(width: 8),
+                          _MealPill(
+                            time: '04:00 PM',
+                            share: '${feedPlan.meal3Kg.toStringAsFixed(1)} kg (30%)',
+                            isCompleted: completedMeals.contains(3),
+                            onTap: () => toggleMeal(3),
+                          ),
+                          const SizedBox(width: 8),
+                          _MealPill(
+                            time: '09:00 PM',
+                            share: '${feedPlan.meal4Kg.toStringAsFixed(1)} kg (20%)',
+                            isCompleted: completedMeals.contains(4),
+                            onTap: () => toggleMeal(4),
+                          ),
+                        ],
+                      );
+                    },
                   )
                 else
-                  Row(
-                    children: const [
+                  const Row(
+                    children: [
                       _MealPill(time: '06:00 AM', share: '20%', isCompleted: false),
                       SizedBox(width: 8),
                       _MealPill(time: '11:00 AM', share: '30%', isCompleted: false),
@@ -658,53 +1002,59 @@ class _MealPill extends StatelessWidget {
   final String time;
   final String share;
   final bool isCompleted;
+  final VoidCallback? onTap;
 
   const _MealPill({
     required this.time,
     required this.share,
     required this.isCompleted,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        decoration: BoxDecoration(
-          color: isCompleted
-              ? AppColors.secondary.withValues(alpha: 0.15)
-              : AppColors.surfaceElevated,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isCompleted ? AppColors.secondary : AppColors.cardBorder,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isCompleted
+                ? AppColors.secondary.withValues(alpha: 0.15)
+                : AppColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isCompleted ? AppColors.secondary : AppColors.cardBorder,
+            ),
           ),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              isCompleted ? Icons.check_circle : Icons.schedule,
-              size: 14,
-              color: isCompleted ? AppColors.secondary : AppColors.textTertiary,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              time,
-              style: GoogleFonts.spaceGrotesk(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            Text(
-              share,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.outfit(
-                fontSize: 9,
+          child: Column(
+            children: [
+              Icon(
+                isCompleted ? Icons.check_circle : Icons.schedule,
+                size: 14,
                 color: isCompleted ? AppColors.secondary : AppColors.textTertiary,
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                time,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                share,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.outfit(
+                  fontSize: 9,
+                  color: isCompleted ? AppColors.secondary : AppColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

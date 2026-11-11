@@ -129,6 +129,21 @@ void main() {
       expect(feedAI.calculateFeedingRate(150), 0.03);
       expect(feedAI.calculateFeedingRate(200), 0.03);
     });
+
+    test('ICAR-CIBA finisher curve tapers down to 1.8% - 2.8% BW for large shrimp (>22g ABW)', () {
+      expect(
+        feedAI.calculateBioEnergeticFeedingRate(doc: 85, abwGrams: 24.0),
+        closeTo(0.028, 0.0001),
+      );
+      expect(
+        feedAI.calculateBioEnergeticFeedingRate(doc: 95, abwGrams: 28.0),
+        closeTo(0.024, 0.0001),
+      );
+      expect(
+        feedAI.calculateBioEnergeticFeedingRate(doc: 110, abwGrams: 34.0),
+        closeTo(0.018, 0.0001),
+      );
+    });
   });
 
   group('FeedAIService — Temperature Adjustment Factor', () {
@@ -178,9 +193,9 @@ void main() {
     });
 
     test('converts CheckTrayStatus enum to appropriate delta', () {
-      expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.clean), -0.20);
-      expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.trace), 0.10);
-      expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.normal), -0.10);
+      expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.clean), 0.10);
+      expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.trace), 0.05);
+      expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.normal), 0.00);
       expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.heavy), -0.15);
       expect(feedAI.trayAdjustmentFromStatus(CheckTrayStatus.uneaten), -0.20);
     });
@@ -232,18 +247,18 @@ void main() {
         temperature: 28.0,
         trayStatus: CheckTrayStatus.clean,
       );
-      expect(planClean.trayFactor, 0.80);
+      expect(planClean.trayFactor, 1.10);
 
-      final planTrace = feedAI.calculateDailyFeed(
+      final planUneaten = feedAI.calculateDailyFeed(
         density: 50,
         areaHa: 1.0,
         survivalRate: 0.80,
         abw: 15.0,
         doc: 40,
         temperature: 28.0,
-        trayStatus: CheckTrayStatus.trace,
+        trayStatus: CheckTrayStatus.uneaten,
       );
-      expect(planTrace.trayFactor, 1.10);
+      expect(planUneaten.trayFactor, 0.80);
     });
 
     test('mealSchedule items contain formatted hours and Telugu labels', () {

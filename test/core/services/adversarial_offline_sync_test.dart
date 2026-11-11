@@ -9,7 +9,7 @@ import 'package:prawn_guard/core/services/base_repository.dart';
 
 // Test implementation of BaseRepository
 class TestRepository extends BaseRepository {
-  TestRepository(OfflineSyncService syncService) : super(syncService);
+  TestRepository(super.syncService);
 
   Future<Map<String, dynamic>?> recordWaterLog({
     required Future<Map<String, dynamic>> Function() action,

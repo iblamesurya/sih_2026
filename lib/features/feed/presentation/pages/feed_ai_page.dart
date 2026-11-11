@@ -1,10 +1,12 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
 import '../../../../core/services/feed_ai_service.dart';
+import '../../../../core/services/subscription_service.dart';
 
 /// Feed AI Bio-Energetics & 4-Meal Planning Page (Tab 2).
 class FeedAiPage extends ConsumerStatefulWidget {
@@ -69,12 +71,27 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
       if (pond['doc'] != null) {
         _docController.text = pond['doc'].toString();
       }
-      if (pond['initialAbw'] != null) {
+      if (pond['abw'] != null) {
+        _abwController.text = (pond['abw'] as num).toDouble().toStringAsFixed(1);
+      } else if (pond['initialAbw'] != null) {
         // Estimate current ABW based on DOC if initial was small PL
         final doc = (pond['doc'] as num?)?.toInt() ?? 1;
-        final estAbw = doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : (pond['initialAbw'] as num?)?.toDouble() ?? 0.02;
+        final estAbw = doc > 30
+            ? (doc * 0.28).clamp(3.0, 35.0)
+            : (pond['initialAbw'] as num?)?.toDouble() ?? 0.02;
         _abwController.text = estAbw.toStringAsFixed(1);
       }
+    }
+
+    // Sync water temperature from latest pond telemetry log if available
+    final waterLogs = ref.read(waterLogsProvider);
+    final latestLog = waterLogs.firstWhere(
+      (l) => l['pond_id']?.toString() == pondId,
+      orElse: () => <String, dynamic>{},
+    );
+    final logTemp = (latestLog['temp'] ?? latestLog['temperature']) as num?;
+    if (logTemp != null) {
+      _temperature = logTemp.toDouble().clamp(20.0, 36.0);
     }
 
     _calculateFeed();
@@ -96,6 +113,7 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
       doc: doc,
       temperature: _temperature,
       trayAdjustment: _trayAdjustment,
+      applyLargeShrimpCurve: true,
     );
 
     setState(() {
@@ -105,30 +123,78 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
     ref.read(activeFeedPlanProvider.notifier).state = plan;
   }
 
+  void _setCheckTrayFeedback(double adjustment) {
+    setState(() {
+      _trayAdjustment = adjustment;
+    });
+    _calculateFeed();
+  }
+
   Future<void> _logFeedRation() async {
     if (_feedPlan == null) return;
-    final offlineSync = ref.read(offlineSyncProvider);
+    final subService = ref.read(subscriptionServiceProvider);
+    final tier = ref.read(currentSubscriptionTierProvider);
+    final isPro = tier == SubscriptionTier.pro;
     final currentFeedLogs = ref.read(feedLogsProvider);
 
+    final now = DateTime.now();
+    final calcsThisMonth = currentFeedLogs.where((log) {
+      final ts = DateTime.tryParse(log['timestamp']?.toString() ?? '');
+      return ts != null && ts.year == now.year && ts.month == now.month;
+    }).length;
+
+    if (!subService.canPerformFeedCalculation(
+      currentCalcsThisMonth: calcsThisMonth,
+      isPro: isPro,
+    )) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Free tier limit reached (5 feed plans/month). Upgrade to Pro for unlimited bio-energetic plans!',
+              style: GoogleFonts.outfit(color: Colors.white),
+            ),
+            backgroundColor: AppColors.alertUrgent,
+            action: SnackBarAction(
+              label: 'UPGRADE',
+              textColor: Colors.white,
+              onPressed: () => context.push('/upgrade'),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final offlineSync = ref.read(offlineSyncProvider);
+    final ponds = ref.read(pondListProvider);
+    final effectivePondId =
+        _selectedPondId ?? (ponds.isNotEmpty ? ponds.first['id']?.toString() ?? '1' : '1');
+
     final newLog = {
-      'id': 'feed_${DateTime.now().millisecondsSinceEpoch}',
-      'pond_id': _selectedPondId ?? '1',
+      'id': 'feed_${now.millisecondsSinceEpoch}',
+      'pond_id': effectivePondId,
       'biomass_kg': _feedPlan!.biomassKg,
       'daily_feed_kg': _feedPlan!.adjustedDailyFeedKg,
       'meal1_kg': _feedPlan!.meal1Kg,
       'meal2_kg': _feedPlan!.meal2Kg,
       'meal3_kg': _feedPlan!.meal3Kg,
       'meal4_kg': _feedPlan!.meal4Kg,
-      'timestamp': DateTime.now().toIso8601String(),
+      'timestamp': now.toIso8601String(),
     };
 
     // Update in-memory state so home and reports reactively reflect it
     ref.read(feedLogsProvider.notifier).state = [newLog, ...currentFeedLogs];
 
     await offlineSync.enqueue({
-      'type': 'INSERT_FEED_PLAN',
-      'feed_data': newLog,
+      'table': 'feed_logs',
+      'action': 'insert',
+      'payload': newLog,
     });
+    await ref
+        .read(dataHydrationServiceProvider)
+        .refreshPendingSyncCount(ref, offlineSync: offlineSync);
+    await ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -148,6 +214,8 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
     final locale = ref.watch(currentLocaleProvider);
     final isTelugu = locale.languageCode == 'te';
     final ponds = ref.watch(pondListProvider);
+    final completedMeals = ref.watch(completedMealsProvider);
+    final currentAbw = double.tryParse(_abwController.text) ?? 18.5;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -216,7 +284,8 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                 // Pond Selector Dropdown
                 if (ponds.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
-                    value: _selectedPondId ?? ponds.first['id']?.toString(),
+                    key: ValueKey(_selectedPondId ?? ponds.first['id']?.toString()),
+                    initialValue: _selectedPondId ?? ponds.first['id']?.toString(),
                     dropdownColor: AppColors.surfaceElevated,
                     style: GoogleFonts.spaceGrotesk(color: AppColors.textPrimary, fontSize: 14),
                     decoration: InputDecoration(
@@ -346,7 +415,7 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                   },
                 ),
 
-                // Check-Tray Adjustment Slider
+                // Check-Tray Feedback Loop Quick Buttons + Slider
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -355,12 +424,43 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                       style: GoogleFonts.outfit(fontSize: 12, color: AppColors.textSecondary),
                     ),
                     Text(
-                      '${(_trayAdjustment * 100).toStringAsFixed(0)}%',
+                      '${_trayAdjustment >= 0 ? "+" : ""}${(_trayAdjustment * 100).toStringAsFixed(0)}%',
                       style: GoogleFonts.spaceGrotesk(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: _trayAdjustment >= 0 ? AppColors.secondary : AppColors.alertUrgent,
                       ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _CheckTrayButton(
+                      label: isTelugu ? 'ఖాళీ (+10%)' : 'Empty (+10%)',
+                      isSelected: (_trayAdjustment - 0.10).abs() < 0.01,
+                      activeColor: AppColors.secondary,
+                      onTap: () => _setCheckTrayFeedback(0.10),
+                    ),
+                    _CheckTrayButton(
+                      label: isTelugu ? '10% మిగిలింది (0%)' : '10% Left (0%)',
+                      isSelected: _trayAdjustment.abs() < 0.01,
+                      activeColor: AppColors.primary,
+                      onTap: () => _setCheckTrayFeedback(0.0),
+                    ),
+                    _CheckTrayButton(
+                      label: isTelugu ? '25% మిగిలింది (-15%)' : '25% Left (-15%)',
+                      isSelected: (_trayAdjustment + 0.15).abs() < 0.01,
+                      activeColor: AppColors.alertWatch,
+                      onTap: () => _setCheckTrayFeedback(-0.15),
+                    ),
+                    _CheckTrayButton(
+                      label: isTelugu ? '>50% మిగిలింది (-20%)' : '>50% Left (-20%)',
+                      isSelected: (_trayAdjustment + 0.20).abs() < 0.01,
+                      activeColor: AppColors.alertUrgent,
+                      onTap: () => _setCheckTrayFeedback(-0.20),
                     ),
                   ],
                 ),
@@ -431,6 +531,15 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                               ),
                             ],
                           ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Est. Daily Cost: ₹${_feedPlan!.estimatedDailyCostInr().toStringAsFixed(0)} (@ ₹92/kg)',
+                            style: GoogleFonts.outfit(
+                              fontSize: 11,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                       Column(
@@ -457,6 +566,30 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                       ),
                     ],
                   ),
+                  if (currentAbw > 22.0) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.verified, size: 14, color: AppColors.primary),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'ICAR-CIBA Finisher Taper Active (${(_feedPlan!.feedingRate * 100).toStringAsFixed(2)}% BW for >22g shrimp) — Prevents late-crop FCR waste & bottom sludge.',
+                              style: GoogleFonts.outfit(fontSize: 11, color: AppColors.textPrimary),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   const Divider(height: 1),
                   const SizedBox(height: 12),
@@ -493,13 +626,29 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
             ),
             const SizedBox(height: 12),
 
-            ..._feedPlan!.mealSchedule.map((meal) => Container(
+            ..._feedPlan!.mealSchedule.map((meal) {
+              final isDone = completedMeals.contains(meal.mealNumber);
+              return InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  final next = Set<int>.from(completedMeals);
+                  if (isDone) {
+                    next.remove(meal.mealNumber);
+                  } else {
+                    next.add(meal.mealNumber);
+                  }
+                  ref.read(completedMealsProvider.notifier).state = next;
+                  ref.read(dataHydrationServiceProvider).saveSnapshotToLocal(ref);
+                },
+                child: Container(
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: AppColors.surface,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.cardBorder),
+                    border: Border.all(
+                      color: isDone ? AppColors.secondary : AppColors.cardBorder,
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -509,14 +658,20 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                           color: AppColors.secondary.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
-                        child: Text(
-                          '#${meal.mealNumber}',
-                          style: GoogleFonts.spaceGrotesk(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.secondary,
-                          ),
-                        ),
+                        child: isDone
+                            ? const Icon(
+                                Icons.check,
+                                size: 16,
+                                color: AppColors.secondary,
+                              )
+                            : Text(
+                                '#${meal.mealNumber}',
+                                style: GoogleFonts.spaceGrotesk(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -524,7 +679,9 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              isTelugu ? meal.teluguLabel : 'Meal ${meal.mealNumber} (${meal.mealTime})',
+                              isTelugu
+                                  ? meal.teluguLabel
+                                  : 'Meal ${meal.mealNumber} (${meal.mealTime})',
                               style: GoogleFonts.spaceGrotesk(
                                 fontSize: 14,
                                 fontWeight: FontWeight.bold,
@@ -533,7 +690,10 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                             ),
                             Text(
                               '${(meal.percentShare * 100).toStringAsFixed(0)}% of daily ration',
-                              style: GoogleFonts.outfit(fontSize: 11, color: AppColors.textSecondary),
+                              style: GoogleFonts.outfit(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                              ),
                             ),
                           ],
                         ),
@@ -548,7 +708,9 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
                       ),
                     ],
                   ),
-                )),
+                ),
+              );
+            }),
             const SizedBox(height: 16),
 
             ElevatedButton.icon(
@@ -572,6 +734,40 @@ class _FeedAiPageState extends ConsumerState<FeedAiPage> {
           const SizedBox(height: 30),
         ],
       ),
+    );
+  }
+}
+
+class _CheckTrayButton extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final Color activeColor;
+  final VoidCallback onTap;
+
+  const _CheckTrayButton({
+    required this.label,
+    required this.isSelected,
+    required this.activeColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      selectedColor: activeColor.withValues(alpha: 0.2),
+      backgroundColor: AppColors.surfaceElevated,
+      checkmarkColor: activeColor,
+      labelStyle: GoogleFonts.spaceGrotesk(
+        fontSize: 11,
+        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+        color: isSelected ? activeColor : AppColors.textSecondary,
+      ),
+      side: BorderSide(
+        color: isSelected ? activeColor : AppColors.cardBorder,
+      ),
+      onSelected: (_) => onTap(),
     );
   }
 }

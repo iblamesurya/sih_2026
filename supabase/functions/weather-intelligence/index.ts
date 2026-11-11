@@ -61,7 +61,8 @@ serve(async (req: Request) => {
       }
     }
 
-    const openWeatherApiKey = Deno.env.get("OPENWEATHERMAP_API_KEY");
+    const openWeatherApiKey =
+      Deno.env.get("OPENWEATHER_API_KEY") ?? Deno.env.get("OPENWEATHERMAP_API_KEY");
     let weatherPayload: any;
 
     if (openWeatherApiKey) {
@@ -136,20 +137,20 @@ serve(async (req: Request) => {
 });
 
 function computeHypoxiaAdvisory(weather: any) {
-  let riskScore = 15;
+  let riskScore = 10;
 
   if (weather.cloudCover > 80) riskScore += 35;
   else if (weather.cloudCover > 60) riskScore += 25;
   else if (weather.cloudCover > 40) riskScore += 15;
 
-  if (weather.temperature > 33.5) riskScore += 25;
+  if (weather.temperature > 34.0) riskScore += 25;
   else if (weather.temperature > 31.0) riskScore += 15;
 
-  if (weather.windSpeed < 6.0) riskScore += 20;
-  else if (weather.windSpeed < 12.0) riskScore += 10;
+  if (weather.windSpeed < 5.0) riskScore += 20;
+  else if (weather.windSpeed < 10.0) riskScore += 10;
 
-  if (weather.rainfall > 5.0) riskScore += 20;
-  else if (weather.rainfall > 0.0) riskScore += 10;
+  if (weather.rainfall > 10.0) riskScore += 20;
+  else if (weather.rainfall > 2.0) riskScore += 10;
 
   riskScore = Math.min(100, Math.max(0, riskScore));
 

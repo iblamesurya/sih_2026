@@ -28,13 +28,14 @@ void main() {
 
     test('extracts compound multi-parameter utterance in single English-Telugu sentence', () {
       final parsed = nluService.parseVoiceInput(
-        'Pond 3 lo pH 8.1, DO 4.8, salinity 16, ammonia 0.04, feed 30 kg',
+        'Pond 3 lo pH 8.1, DO 4.8, salinity 16, ammonia 0.04, alkalinity 140, feed 30 kg',
       );
       expect(parsed.pondIndex, 3);
       expect(parsed.ph, 8.1);
       expect(parsed.doLevel, 4.8);
       expect(parsed.salinity, 16.0);
       expect(parsed.ammonia, 0.04);
+      expect(parsed.alkalinity, 140.0);
       expect(parsed.feedKg, 30.0);
       expect(parsed.confidence, greaterThan(0.90));
     });
@@ -69,15 +70,27 @@ void main() {
       expect(parsed.doLevel, 4.2);
     });
 
-    test('extracts Telugu script parameters (ఆక్సిజన్, పిహెచ్, ఉప్పుదనం, అమ్మోనియా)', () {
+    test('extracts Telugu script parameters (ఆక్సిజన్, పిహెచ్, ఉప్పుదనం, అమ్మోనియా, ఆల్కలినిటీ)', () {
       final parsed = nluService.parseVoiceInput(
-        'చెరువు 1 లో ఆక్సిజన్ 4.8, పిహెచ్ 7.9, ఉప్పుదనం 18, అమ్మోనియా 0.05',
+        'చెరువు 1 లో ఆక్సిజన్ 4.8, పిహెచ్ 7.9, ఉప్పుదనం 18, అమ్మోనియా 0.05, ఆల్కలినిటీ 135',
       );
       expect(parsed.pondIndex, 1);
       expect(parsed.doLevel, 4.8);
       expect(parsed.ph, 7.9);
       expect(parsed.salinity, 18.0);
       expect(parsed.ammonia, 0.05);
+      expect(parsed.alkalinity, 135.0);
+    });
+
+    test('extracts spoken Telugu number words (చెరువు ఒకటిలో పీహెచ్ 7.9 ఉంది, ఆక్సిజన్ 4.8, అమ్మోనియా సున్నా, మేత 30 కేజీలు వేసాను)', () {
+      final parsed = nluService.parseVoiceInput(
+        'చెరువు ఒకటిలో పీహెచ్ 7.9 ఉంది, ఆక్సిజన్ 4.8, అమ్మోనియా సున్నా, మేత 30 కేజీలు వేసాను',
+      );
+      expect(parsed.pondIndex, 1);
+      expect(parsed.ph, 7.9);
+      expect(parsed.doLevel, 4.8);
+      expect(parsed.ammonia, 0.0);
+      expect(parsed.feedKg, 30.0);
     });
 
     test('extracts Telugu script feed quantity (మేత 30 కిలోలు / మేత 25 కేజీ)', () {
@@ -149,12 +162,15 @@ void main() {
     });
 
     test('serializes ParsedTelemetry to JSON correctly', () {
-      final parsed = nluService.parseVoiceInput('Pond 2 lo pH 7.8, DO 5.2, feed 25 kg');
+      final parsed = nluService.parseVoiceInput(
+        'Pond 2 lo pH 7.8, DO 5.2, alkalinity 140, feed 25 kg',
+      );
       final json = parsed.toJson();
 
       expect(json['pondIndex'], 2);
       expect(json['ph'], 7.8);
       expect(json['doLevel'], 5.2);
+      expect(json['alkalinity'], 140.0);
       expect(json['feedKg'], 25.0);
       expect(json['rawTranscript'], contains('Pond 2'));
       expect(json['isEmpty'], isFalse);

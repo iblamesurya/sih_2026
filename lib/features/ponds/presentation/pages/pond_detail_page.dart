@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -40,14 +40,39 @@ class PondDetailPage extends ConsumerWidget {
     // Filter telemetry logs for this specific pond
     final pondLogs = allWaterLogs.where((l) => l['pond_id']?.toString() == pondId).toList();
     final latestLog = pondLogs.isNotEmpty ? pondLogs.first : null;
+    final alertSystem = ref.watch(alertSystemProvider);
 
-    final doVal = (latestLog?['dissolved_oxygen'] as num?)?.toDouble() ?? 4.8;
-    final phVal = (latestLog?['ph'] as num?)?.toDouble() ?? 7.85;
-    final salVal = (latestLog?['salinity'] as num?)?.toDouble() ?? 18.0;
-    final nh3Val = (latestLog?['ammonia'] as num?)?.toDouble() ?? 0.04;
+    final doVal = (latestLog?['dissolved_oxygen'] as num?)?.toDouble();
+    final phVal = (latestLog?['ph'] as num?)?.toDouble();
+    final salVal = (latestLog?['salinity'] as num?)?.toDouble();
+    final nh3Val = (latestLog?['ammonia'] as num?)?.toDouble();
+
+    final doAlert = doVal != null ? alertSystem.evaluateDO(doVal) : null;
+    final phAlert = phVal != null ? alertSystem.evaluatePh(phVal) : null;
+    final salAlert = salVal != null ? alertSystem.evaluateSalinity(salVal) : null;
+    final nh3Alert = nh3Val != null ? alertSystem.evaluateAmmonia(nh3Val) : null;
+
+    String statusLabel(dynamic alert) {
+      if (alert == null) return 'No Data';
+      if (alert.isUrgent == true) {
+        return isTelugu ? 'Urgent (ప్రమాదం)' : 'Urgent';
+      }
+      if (alert.isWatch == true) {
+        return isTelugu ? 'Watch (జాగ్రత్త)' : 'Watch';
+      }
+      return isTelugu ? 'Optimal (సురక్షితం)' : 'Optimal';
+    }
+
+    Color statusColorOf(dynamic alert) {
+      if (alert == null) return AppColors.textTertiary;
+      if (alert.isUrgent == true) return AppColors.alertUrgent;
+      if (alert.isWatch == true) return AppColors.alertWatch;
+      return AppColors.secondary;
+    }
 
     // Biomass estimation
-    final estAbw = doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : 18.5;
+    final estAbw = (pond['abw'] as num?)?.toDouble() ??
+        (doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : 18.5);
     final estBiomassKg = (area * 10000 * density * 0.85 * estAbw / 1000).round();
 
     return Scaffold(
@@ -192,35 +217,35 @@ class PondDetailPage extends ConsumerWidget {
             children: [
               _TelemetryGaugeCard(
                 parameter: 'Dissolved Oxygen',
-                value: doVal.toStringAsFixed(1),
+                value: doVal != null ? doVal.toStringAsFixed(1) : '--',
                 unit: 'mg/L',
-                status: doVal >= 4.0 ? 'Optimal' : (doVal >= 3.5 ? 'Watch' : 'Urgent'),
-                statusColor: doVal >= 4.0 ? AppColors.secondary : (doVal >= 3.5 ? AppColors.alertWatch : AppColors.alertUrgent),
+                status: statusLabel(doAlert),
+                statusColor: statusColorOf(doAlert),
                 optimalRange: '> 4.0 mg/L',
               ),
               _TelemetryGaugeCard(
                 parameter: 'pH Level',
-                value: phVal.toStringAsFixed(2),
+                value: phVal != null ? phVal.toStringAsFixed(2) : '--',
                 unit: 'pH',
-                status: phVal >= 7.5 && phVal <= 8.5 ? 'Optimal' : 'Watch',
-                statusColor: phVal >= 7.5 && phVal <= 8.5 ? AppColors.secondary : AppColors.alertWatch,
+                status: statusLabel(phAlert),
+                statusColor: statusColorOf(phAlert),
                 optimalRange: '7.5 - 8.5',
               ),
               _TelemetryGaugeCard(
                 parameter: 'Salinity',
-                value: salVal.toStringAsFixed(1),
+                value: salVal != null ? salVal.toStringAsFixed(1) : '--',
                 unit: 'ppt',
-                status: salVal >= 10 && salVal <= 25 ? 'Optimal' : 'Watch',
-                statusColor: salVal >= 10 && salVal <= 25 ? AppColors.secondary : AppColors.alertWatch,
-                optimalRange: '10 - 25 ppt',
+                status: statusLabel(salAlert),
+                statusColor: statusColorOf(salAlert),
+                optimalRange: '5 - 35 ppt',
               ),
               _TelemetryGaugeCard(
                 parameter: 'Total Ammonia',
-                value: nh3Val.toStringAsFixed(2),
+                value: nh3Val != null ? nh3Val.toStringAsFixed(2) : '--',
                 unit: 'mg/L',
-                status: nh3Val <= 0.05 ? 'Optimal' : (nh3Val <= 0.1 ? 'Watch' : 'Urgent'),
-                statusColor: nh3Val <= 0.05 ? AppColors.secondary : (nh3Val <= 0.1 ? AppColors.alertWatch : AppColors.alertUrgent),
-                optimalRange: '< 0.1 mg/L',
+                status: statusLabel(nh3Alert),
+                statusColor: statusColorOf(nh3Alert),
+                optimalRange: '< 0.05 mg/L',
               ),
             ],
           ),
@@ -427,9 +452,19 @@ class _TelemetryGaugeCard extends StatelessWidget {
                 ),
               ),
               Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  status,
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: statusColor,
+                  ),
+                ),
               ),
             ],
           ),

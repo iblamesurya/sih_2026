@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import FarmMap from './pages/FarmMap';
 import MarketPrices from './pages/MarketPrices';
 import Announcements from './pages/Announcements';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function PlaceholderPage({ title, description }) {
   return (
@@ -24,34 +25,39 @@ function PlaceholderPage({ title, description }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="farm-map" element={<FarmMap />} />
-          <Route
-            path="disease-scans"
-            element={
-              <PlaceholderPage
-                title="Disease Scans & AI Vision Diagnostics"
-                description="Pathology vision history and Gemini Flash triage logs."
-              />
-            }
-          />
-          <Route path="market" element={<MarketPrices />} />
-          <Route path="announcements" element={<Announcements />} />
-          <Route
-            path="users"
-            element={
-              <PlaceholderPage
-                title="User Management"
-                description="Farmer and field officer role access control."
-              />
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary
+      title="PrawnGuard Admin Portal Error"
+      description="The application encountered an unexpected runtime issue. Please retry or reload."
+    >
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="farm-map" element={<FarmMap />} />
+            <Route
+              path="disease-scans"
+              element={
+                <PlaceholderPage
+                  title="Disease Scans & AI Vision Diagnostics"
+                  description="Pathology vision history and Gemini Flash triage logs."
+                />
+              }
+            />
+            <Route path="market" element={<MarketPrices />} />
+            <Route path="announcements" element={<Announcements />} />
+            <Route
+              path="users"
+              element={
+                <PlaceholderPage
+                  title="User Management"
+                  description="Farmer and field officer role access control."
+                />
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

@@ -173,12 +173,12 @@ void main() {
     });
 
     test('5.7 PrawnDocAIService Robust JSON Recovery Under Severely Truncated Responses', () {
-      final truncatedJson1 = '{"disease_name": "White Spot Syndrome Virus (WSSV)", "confidence": 0.94, "severity": "high"';
+      const truncatedJson1 = '{"disease_name": "White Spot Syndrome Virus (WSSV)", "confidence": 0.94, "severity": "high"';
       final res1 = prawnDocService.parseRobustJson(truncatedJson1);
       expect(res1['disease_name'], equals('White Spot Syndrome Virus (WSSV)'));
       expect(res1['confidence'], equals(0.94));
 
-      final markdownJson = '```json\n{"disease": "AHPND", "confidence": 0.88}\n```';
+      const markdownJson = '```json\n{"disease": "AHPND", "confidence": 0.88}\n```';
       final res2 = prawnDocService.parseRobustJson(markdownJson);
       expect(res2['disease'], equals('AHPND'));
       expect(res2['confidence'], equals(0.88));

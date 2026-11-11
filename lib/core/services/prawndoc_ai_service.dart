@@ -1433,7 +1433,7 @@ class PrawnDocAIService {
     if (_geminiApiKey.isNotEmpty && !_geminiApiKey.contains('your-gemini')) {
       try {
         final client = _httpClient ?? http.Client();
-        final geminiUrl =
+        const geminiUrl =
             'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_geminiApiKey';
 
         final prompt =
@@ -1497,7 +1497,7 @@ class PrawnDocAIService {
     if (!SupabaseClientService.defaultUrl.contains('xyzcompany')) {
       try {
         final client = _httpClient ?? http.Client();
-        final edgeFunctionUrl =
+        const edgeFunctionUrl =
             '${SupabaseClientService.defaultUrl}/functions/v1/prawndoc-ai';
 
         final requestPayload = {

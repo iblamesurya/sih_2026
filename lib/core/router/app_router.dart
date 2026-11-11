@@ -8,6 +8,7 @@ import '../../features/ponds/presentation/pages/pond_list_page.dart';
 import '../../features/ponds/presentation/pages/pond_detail_page.dart';
 import '../../features/ponds/presentation/pages/telemetry_logging_page.dart';
 import '../../features/ponds/presentation/pages/add_pond_modal.dart';
+import '../../features/ponds/presentation/pages/abw_camera_sampling_page.dart';
 import '../../features/feed/presentation/pages/feed_ai_page.dart';
 import '../../features/prawndoc/presentation/pages/prawndoc_page.dart';
 import '../../features/more/presentation/pages/more_page.dart';
@@ -18,6 +19,7 @@ import '../../features/reports/presentation/pages/reports_page.dart';
 import '../../features/subscription/presentation/pages/upgrade_page.dart';
 import '../../features/community/presentation/pages/community_page.dart';
 import '../../features/admin/presentation/pages/admin_page.dart';
+import '../../features/market/presentation/pages/mandi_prices_page.dart';
 import '../../features/auth/presentation/pages/login_page.dart';
 import '../../features/auth/presentation/pages/onboarding_page.dart';
 
@@ -142,6 +144,16 @@ GoRouter createPrawnGuardRouter({String initialLocation = '/home'}) {
         path: '/community',
         parentNavigatorKey: _rootNavigatorKey,
         builder: (context, state) => const CommunityPage(),
+      ),
+      GoRoute(
+        path: '/market-prices',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const MandiPricesPage(),
+      ),
+      GoRoute(
+        path: '/abw-sampling',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const AbwCameraSamplingPage(),
       ),
       GoRoute(
         path: '/add-pond',

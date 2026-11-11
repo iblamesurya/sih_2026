@@ -21,6 +21,9 @@ class ParsedTelemetry {
   /// Total Ammonia Nitrogen (TAN / NH3) in mg/L (optimal < 0.1 mg/L).
   final double? ammonia;
 
+  /// Total Alkalinity in ppm / mg/L (optimal 100 - 150 ppm).
+  final double? alkalinity;
+
   /// Feed quantity in kilograms.
   final double? feedKg;
 
@@ -37,6 +40,7 @@ class ParsedTelemetry {
     this.salinity,
     this.temperature,
     this.ammonia,
+    this.alkalinity,
     this.feedKg,
     this.confidence = 1.0,
     this.rawTranscript = '',
@@ -50,6 +54,7 @@ class ParsedTelemetry {
       salinity == null &&
       temperature == null &&
       ammonia == null &&
+      alkalinity == null &&
       feedKg == null;
 
   /// True if at least one parameter or entity was identified.
@@ -61,7 +66,8 @@ class ParsedTelemetry {
       doLevel != null ||
       salinity != null ||
       temperature != null ||
-      ammonia != null;
+      ammonia != null ||
+      alkalinity != null;
 
   Map<String, dynamic> toJson() => {
         'pondIndex': pondIndex,
@@ -70,6 +76,7 @@ class ParsedTelemetry {
         'salinity': salinity,
         'temperature': temperature,
         'ammonia': ammonia,
+        'alkalinity': alkalinity,
         'feedKg': feedKg,
         'confidence': confidence,
         'rawTranscript': rawTranscript,
@@ -78,30 +85,53 @@ class ParsedTelemetry {
 
   @override
   String toString() =>
-      'ParsedTelemetry(Pond: $pondIndex, pH: $ph, DO: $doLevel, Salinity: $salinity, Temp: $temperature, NH3: $ammonia, Feed: $feedKg kg)';
+      'ParsedTelemetry(Pond: $pondIndex, pH: $ph, DO: $doLevel, Salinity: $salinity, Temp: $temperature, NH3: $ammonia, Alkalinity: $alkalinity, Feed: $feedKg kg)';
 }
 
 /// Natural Language Understanding (NLU) Service for code-mixed Telugu, English, and transliterated speech.
 ///
 /// Designed to parse on-device voice transcripts from farmers in coastal Andhra Pradesh,
-/// extracting structured aquaculture parameters (pond number, DO, pH, salinity, temperature, ammonia, feed quantity).
+/// extracting structured aquaculture parameters (pond number, DO, pH, salinity, temperature, ammonia, alkalinity, feed quantity).
 class TeluguVoiceNLUService {
   const TeluguVoiceNLUService();
+
+  /// Normalizes common spoken Telugu number words into digits so regex extractors
+  /// seamlessly handle both digits ("1", "0") and spoken words ("ఒకటి", "సున్నా").
+  String _normalizeTeluguNumberWords(String input) {
+    var s = input;
+    final wordMap = <RegExp, String>{
+      RegExp(r'ఒకటిలో|ఒకటవ|ఒకటి|okati|okatava', caseSensitive: false): '1',
+      RegExp(r'రెండులో|రెండవ|రెండో|రెండు|rendu|rendava', caseSensitive: false): '2',
+      RegExp(r'మూడులో|మూడవ|మూడో|మూడు|moodu|mudu', caseSensitive: false): '3',
+      RegExp(r'నాలుగులో|నాలుగవ|నాలుగో|నాలుగు|naalugu|nalugu', caseSensitive: false): '4',
+      RegExp(r'ఐదులో|ఐదవ|ఐదో|ఐదు|aidu|ayidu', caseSensitive: false): '5',
+      RegExp(r'ఆరులో|ఆరవ|ఆరు|aaru', caseSensitive: false): '6',
+      RegExp(r'ఏడులో|ఏడవ|ఏడు|edu|yedu', caseSensitive: false): '7',
+      RegExp(r'ఎనిమిదిలో|ఎనిమిదవ|ఎనిమిది|enimidi', caseSensitive: false): '8',
+      RegExp(r'తొమ్మిదిలో|తొమ్మిదవ|తొమ్మిది|thommidi', caseSensitive: false): '9',
+      RegExp(r'పదిలో|పదవ|పది|padi', caseSensitive: false): '10',
+      RegExp(r'సున్నా|సున్న|sunna|\bzero\b', caseSensitive: false): '0',
+    };
+    wordMap.forEach((pattern, digit) {
+      s = s.replaceAll(pattern, digit);
+    });
+    return s;
+  }
 
   /// Parses voice transcripts containing mixed English, Telugu script, and transliterated Telugu telemetry.
   ///
   /// Examples:
   /// - "Pond 2 lo pH 7.8, DO 5.2, feed 25 kg" -> `{pond: 2, ph: 7.8, do: 5.2, feed: 25.0}`
+  /// - "చెరువు ఒకటిలో పీహెచ్ 7.9 ఉంది, ఆక్సిజన్ 4.8, అమ్మోనియా సున్నా, మేత 30 కేజీలు వేసాను" -> `{pond: 1, ph: 7.9, do: 4.8, ammonia: 0.0, feed: 30.0}`
   /// - "చెరువు 2 లో pH 7.5, DO 4.2" -> `{pond: 2, ph: 7.5, do: 4.2}`
   /// - "pond 1 lo salinity 15 ppt ammonia 0.04" -> `{pond: 1, salinity: 15.0, ammonia: 0.04}`
   /// - "ఉదయం 3వ చెరువులో మేత 35 కిలోలు వేసాము" -> `{pond: 3, feed: 35.0}`
-  /// - "morning pH 7.8 vachindi, DO 5.2 mg/l recorded" -> `{ph: 7.8, do: 5.2}`
   ParsedTelemetry parseVoiceInput(String transcript) {
     if (transcript.trim().isEmpty) {
       return const ParsedTelemetry();
     }
 
-    final lower = transcript.toLowerCase();
+    final lower = _normalizeTeluguNumberWords(transcript.toLowerCase());
 
     // 1. Pond Index extraction
     // English: "pond 2", "tank 1"
@@ -136,11 +166,11 @@ class TeluguVoiceNLUService {
 
     // 3. pH Level extraction
     // English: "ph 7.8", "ph : 8.2", "p.h. 7.5"
-    // Telugu script: "పిహెచ్ 7.5", "పి హెచ్ 8.2", "పి.హెచ్ 7.8"
+    // Telugu script: "పిహెచ్ 7.5", "పీహెచ్ 7.9", "పి హెచ్ 8.2", "పి.హెచ్ 7.8", "పీ.హెచ్ 7.8"
     // Transliterated: "pihech 7.8", "pih 7.5"
     double? ph;
     final phPattern = RegExp(
-      r'(?:\bph\b|\bp\.h\.\b|పిహెచ్|పి\.హెచ్|పి\s*హెచ్|pihech)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)',
+      r'(?:\bph\b|\bp\.h\.\b|పీహెచ్|పిహెచ్|పీ\.హెచ్|పి\.హెచ్|పీ\s*హెచ్|పి\s*హెచ్|pihech)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)',
       caseSensitive: false,
     );
     final phMatch = phPattern.firstMatch(lower);
@@ -154,7 +184,7 @@ class TeluguVoiceNLUService {
     // Transliterated: "uppudanam 15", "saliniti 16", "uppu 15"
     double? salinity;
     final salPattern = RegExp(
-      r'(?:\bsalinity\b|\bsalt\b|ఉప్పుదనం|ఉప్పు\s*శాతం|సెలైనిటీ|uppudanam|saliniti)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)',
+      r'(?:\bsalinity\b|\bsalt\b|ఉప్పుదనం|ఉప్పు\s*శాతం|ఉప్పు|సెలైనిటీ|uppudanam|saliniti|uppu)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)',
       caseSensitive: false,
     );
     final salMatch = salPattern.firstMatch(lower);
@@ -190,9 +220,23 @@ class TeluguVoiceNLUService {
       ammonia = double.tryParse(nh3Match.group(1)!);
     }
 
-    // 7. Feed Quantity in kg extraction
+    // 7. Alkalinity extraction
+    // English: "alkalinity 120", "alkalinity 140 ppm"
+    // Telugu script: "ఆల్కలినిటీ 120", "క్షారత్వం 130"
+    // Transliterated: "alkaliniti 120", "ksharatvam 130"
+    double? alkalinity;
+    final alkPattern = RegExp(
+      r'(?:\balkalinity\b|ఆల్కలినిటీ|అల్కలినిటీ|క్షారత్వం|alkaliniti|ksharatvam)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)',
+      caseSensitive: false,
+    );
+    final alkMatch = alkPattern.firstMatch(lower);
+    if (alkMatch != null) {
+      alkalinity = double.tryParse(alkMatch.group(1)!);
+    }
+
+    // 8. Feed Quantity in kg extraction
     // English: "feed 25 kg", "feed : 25", "morning feed 35 kg", "25 kg feed"
-    // Telugu script: "మేత 25 కిలోలు", "మేత 25 kg", "ఫీడ్ 30 కేజీ", "ఆహారం 25 కిలోలు"
+    // Telugu script: "మేత 25 కిలోలు", "మేత 30 కేజీలు వేసాను", "మేత 25 kg", "ఫీడ్ 30 కేజీ", "ఆహారం 25 కిలోలు"
     // Transliterated: "metha 25 kg", "meetha 30 kg", "meta 25"
     double? feedKg;
     final feedPattern = RegExp(
@@ -215,9 +259,11 @@ class TeluguVoiceNLUService {
     if (salinity != null) recognizedCount++;
     if (temperature != null) recognizedCount++;
     if (ammonia != null) recognizedCount++;
+    if (alkalinity != null) recognizedCount++;
     if (feedKg != null) recognizedCount++;
 
-    final confidence = recognizedCount > 0 ? (0.85 + (recognizedCount * 0.03)).clamp(0.0, 0.99) : 0.0;
+    final confidence =
+        recognizedCount > 0 ? (0.85 + (recognizedCount * 0.03)).clamp(0.0, 0.99) : 0.0;
 
     return ParsedTelemetry(
       pondIndex: pondIndex,
@@ -226,6 +272,7 @@ class TeluguVoiceNLUService {
       salinity: salinity,
       temperature: temperature,
       ammonia: ammonia,
+      alkalinity: alkalinity,
       feedKg: feedKg,
       confidence: confidence,
       rawTranscript: transcript,

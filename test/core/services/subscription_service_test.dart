@@ -141,5 +141,13 @@ void main() {
         contains('PrawnGuard Pro'),
       );
     });
+
+    test('calculates AP farmer 120-day Crop Pass savings and ROI multiple', () {
+      final roi = subscriptionService.calculateCropSavingsInr(totalAreaHa: 1.0);
+      expect(roi['feedSavingsInr'], closeTo(33120.0, 1.0));
+      expect(roi['mandiTimingGainInr'], closeTo(54000.0, 1.0));
+      expect(roi['totalSavingsInr'], closeTo(87120.0, 1.0));
+      expect(roi['roiMultiple'], greaterThan(80.0));
+    });
   });
 }

@@ -56,7 +56,7 @@ void main() {
     });
   });
 
-  group('AlertSystem - Ammonia (NH3) Thresholds', () {
+  group('AlertSystem - Ammonia (NH3) Thresholds & Emerson TAN Conversion', () {
     test('Ammonia > 0.1 mg/L is Urgent', () {
       final alert = alertSystem.evaluateAmmonia(0.18);
       expect(alert.severity, equals(AlertSeverity.urgent));
@@ -73,6 +73,26 @@ void main() {
       final alert = alertSystem.evaluateAmmonia(0.02);
       expect(alert.severity, equals(AlertSeverity.optimal));
       expect(alert.isOptimal, isTrue);
+    });
+
+    test('Emerson equation converts TAN to Un-ionized NH3 accurately based on pH and Temperature', () {
+      // At TAN = 1.0 mg/L, pH = 8.2, Temp = 30.0°C -> ~11.2% un-ionized NH3 (~0.112 mg/L -> Urgent)
+      final nh3HighPh = alertSystem.calculateUnIonizedNh3FromTan(
+        tanMgL: 1.0,
+        ph: 8.2,
+        temperatureC: 30.0,
+      );
+      expect(nh3HighPh, greaterThan(0.10));
+      expect(alertSystem.evaluateAmmonia(nh3HighPh).isUrgent, isTrue);
+
+      // At TAN = 0.5 mg/L, pH = 7.6, Temp = 28.0°C -> ~2.7% un-ionized NH3 (~0.013 mg/L -> Optimal)
+      final nh3NormalPh = alertSystem.calculateUnIonizedNh3FromTan(
+        tanMgL: 0.5,
+        ph: 7.6,
+        temperatureC: 28.0,
+      );
+      expect(nh3NormalPh, lessThan(0.05));
+      expect(alertSystem.evaluateAmmonia(nh3NormalPh).isOptimal, isTrue);
     });
   });
 

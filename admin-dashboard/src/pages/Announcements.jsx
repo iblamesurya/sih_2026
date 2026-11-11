@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Megaphone,
   Plus,
   Radio,
   Send,
-  AlertTriangle,
   CheckCircle2,
   Trash2,
-  Globe,
-  BellRing,
-  Calendar,
-  Filter
+  Filter,
+  Database
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { SkeletonAnnouncement } from '../components/Skeletons';
+import { getCache, setCache } from '../lib/cache';
+
+const CACHE_KEY = 'prawnguard_admin_announcements';
 
 const INITIAL_ANNOUNCEMENTS = [
   {
@@ -57,9 +59,11 @@ const INITIAL_ANNOUNCEMENTS = [
 
 export default function Announcements() {
   const [announcements, setAnnouncements] = useState(INITIAL_ANNOUNCEMENTS);
+  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [filterCategory, setFilterCategory] = useState('All');
   const [toastMessage, setToastMessage] = useState('');
+  const [isCached, setIsCached] = useState(false);
 
   // Form state
   const [formTitle, setFormTitle] = useState('');
@@ -69,7 +73,61 @@ export default function Announcements() {
   const [formPriority, setFormPriority] = useState('High');
   const [formRegion, setFormRegion] = useState('All Andhra Pradesh');
 
-  const handleCreateAnnouncement = (e) => {
+  useEffect(() => {
+    let active = true;
+    const cached = getCache(CACHE_KEY, 15 * 60 * 1000); // 15 mins cache
+    if (cached) {
+      setAnnouncements(cached);
+      setIsCached(true);
+      setLoading(false);
+    }
+
+    async function loadSupabaseAnnouncements() {
+      try {
+        const { data, error } = await supabase
+          .from('admin_announcements')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (!error && Array.isArray(data) && data.length > 0 && active) {
+          const mapped = data.map((row) => ({
+            id: row.id,
+            title: row.title,
+            teluguTitle: row.title_te || row.title,
+            body: row.message_body,
+            category: 'Official Advisory',
+            priority: row.severity === 'critical' ? 'Critical' : 'High',
+            targetRegion: row.target_district || 'All Andhra Pradesh',
+            author: 'Supabase Live Broadcast',
+            timestamp: row.created_at ? new Date(row.created_at).toLocaleString() : 'Live',
+            recipientCount: 1280,
+            status: 'Active',
+          }));
+          const combined = [...mapped, ...INITIAL_ANNOUNCEMENTS];
+          setAnnouncements(combined);
+          setCache(CACHE_KEY, combined);
+        } else if (active && !cached) {
+          setCache(CACHE_KEY, INITIAL_ANNOUNCEMENTS);
+        }
+      } catch (_) {
+        // Fallback to seed announcements when offline
+        if (active && !cached) {
+          setCache(CACHE_KEY, INITIAL_ANNOUNCEMENTS);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadSupabaseAnnouncements();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleCreateAnnouncement = async (e) => {
     e.preventDefault();
     if (!formTitle || !formBody) return;
 
@@ -87,17 +145,37 @@ export default function Announcements() {
       status: 'Active',
     };
 
-    setAnnouncements([newAnn, ...announcements]);
+    const updated = [newAnn, ...announcements];
+    setAnnouncements(updated);
+    setCache(CACHE_KEY, updated);
     setShowModal(false);
     setFormTitle('');
     setFormTeluguTitle('');
     setFormBody('');
+
+    try {
+      await supabase.from('admin_announcements').insert({
+        title: newAnn.title,
+        title_te: newAnn.teluguTitle,
+        message_body: newAnn.body,
+        severity: newAnn.priority === 'Critical' ? 'critical' : 'warning',
+        target_district: newAnn.targetRegion,
+      });
+    } catch (_) {
+      // Optimistic local state already updated
+    }
+
     setToastMessage(`Broadcasted announcement to ${newAnn.recipientCount} farmers!`);
     setTimeout(() => setToastMessage(''), 5000);
   };
 
-  const handleDelete = (id) => {
-    setAnnouncements(announcements.filter((a) => a.id !== id));
+  const handleDelete = async (id) => {
+    const updated = announcements.filter((a) => a.id !== id);
+    setAnnouncements(updated);
+    setCache(CACHE_KEY, updated);
+    try {
+      await supabase.from('admin_announcements').delete().eq('id', id);
+    } catch (_) {}
     setToastMessage('Announcement removed from active farmer feeds.');
     setTimeout(() => setToastMessage(''), 3000);
   };
@@ -120,13 +198,22 @@ export default function Announcements() {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 rounded-xl bg-[#00E5FF] px-4 py-2.5 text-sm font-bold text-[#0A0A0B] hover:bg-[#00E5FF]/90 transition-all shadow-lg shadow-[#00E5FF]/20"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New Broadcast</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {isCached && (
+            <div className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-[#171717] px-3 py-1.5 border border-white/[0.08] text-[11px] font-mono text-slate-400">
+              <Database className="h-3.5 w-3.5 text-[#10B981]" />
+              <span>Cached</span>
+            </div>
+          )}
+
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 rounded-xl bg-[#00E5FF] px-4 py-2.5 text-sm font-bold text-[#0A0A0B] hover:bg-[#00E5FF]/90 transition-all shadow-lg shadow-[#00E5FF]/20"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New Broadcast</span>
+          </button>
+        </div>
       </div>
 
       {/* Toast Notification */}
@@ -157,65 +244,69 @@ export default function Announcements() {
       </div>
 
       {/* Announcements Feed */}
-      <div className="space-y-4">
-        {filteredAnnouncements.map((item) => (
-          <div
-            key={item.id}
-            className="rounded-2xl bg-[#171717] border border-white/[0.08] p-6 shadow-lg hover:border-white/[0.15] transition-all"
-          >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-center gap-2">
-                <span
-                  className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                    item.priority === 'Critical'
-                      ? 'bg-[#E55C5C]/20 text-[#E55C5C] border border-[#E55C5C]/40'
-                      : (item.priority === 'High'
-                          ? 'bg-[#E5B05C]/20 text-[#E5B05C] border border-[#E5B05C]/40'
-                          : 'bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40')
-                  }`}
-                >
-                  {item.priority} Priority
-                </span>
-                <span className="text-xs text-slate-400 font-mono">• {item.category}</span>
-                <span className="text-xs text-slate-400">• Target: {item.targetRegion}</span>
+      {loading ? (
+        <SkeletonAnnouncement count={3} />
+      ) : (
+        <div className="space-y-4">
+          {filteredAnnouncements.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-2xl bg-[#171717] border border-white/[0.08] p-6 shadow-lg hover:border-white/[0.15] transition-all"
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                      item.priority === 'Critical'
+                        ? 'bg-[#E55C5C]/20 text-[#E55C5C] border border-[#E55C5C]/40'
+                        : (item.priority === 'High'
+                            ? 'bg-[#E5B05C]/20 text-[#E5B05C] border border-[#E5B05C]/40'
+                            : 'bg-[#00E5FF]/20 text-[#00E5FF] border border-[#00E5FF]/40')
+                    }`}
+                  >
+                    {item.priority} Priority
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">• {item.category}</span>
+                  <span className="text-xs text-slate-400">• Target: {item.targetRegion}</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500 font-mono">{item.timestamp}</span>
+                  <button
+                    onClick={() => handleDelete(item.id)}
+                    className="text-slate-500 hover:text-[#E55C5C] transition-colors p-1"
+                    title="Delete Announcement"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-500 font-mono">{item.timestamp}</span>
-                <button
-                  onClick={() => handleDelete(item.id)}
-                  className="text-slate-500 hover:text-[#E55C5C] transition-colors p-1"
-                  title="Delete Announcement"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              <h3 className="font-heading text-lg font-bold text-white">
-                {item.title}
-              </h3>
-              {item.teluguTitle && item.teluguTitle !== item.title && (
-                <p className="text-sm font-semibold text-[#00E5FF]">
-                  {item.teluguTitle}
+              <div className="mt-3 space-y-2">
+                <h3 className="font-heading text-lg font-bold text-white">
+                  {item.title}
+                </h3>
+                {item.teluguTitle && item.teluguTitle !== item.title && (
+                  <p className="text-sm font-semibold text-[#00E5FF]">
+                    {item.teluguTitle}
+                  </p>
+                )}
+                <p className="text-sm text-slate-300 leading-relaxed">
+                  {item.body}
                 </p>
-              )}
-              <p className="text-sm text-slate-300 leading-relaxed">
-                {item.body}
-              </p>
-            </div>
+              </div>
 
-            <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-500">
-              <span>Author: {item.author}</span>
-              <div className="flex items-center gap-1.5 text-[#10B981]">
-                <Radio className="h-3.5 w-3.5 animate-pulse" />
-                <span>Delivered to {item.recipientCount} Farmers</span>
+              <div className="mt-4 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-500">
+                <span>Author: {item.author}</span>
+                <div className="flex items-center gap-1.5 text-[#10B981]">
+                  <Radio className="h-3.5 w-3.5 animate-pulse" />
+                  <span>Delivered to {item.recipientCount} Farmers</span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Create Announcement Modal */}
       {showModal && (

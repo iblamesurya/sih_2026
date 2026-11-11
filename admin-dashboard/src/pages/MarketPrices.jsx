@@ -1,16 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   TrendingUp,
   MapPin,
   Plus,
-  RefreshCw,
   ArrowUpRight,
   ArrowDownRight,
-  DollarSign,
-  Calendar,
-  Building,
   CheckCircle2,
-  Bell
+  Bell,
+  Database
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -22,6 +19,9 @@ import {
   CartesianGrid,
   Legend
 } from 'recharts';
+import { supabase } from '../lib/supabase';
+import { SkeletonCard, SkeletonChart } from '../components/Skeletons';
+import { getCache, setCache } from '../lib/cache';
 
 const REGIONAL_HUBS = [
   'Bhimavaram (West Godavari, AP)',
@@ -53,15 +53,77 @@ const HISTORICAL_TRENDS = [
 export default function MarketPrices() {
   const [selectedHub, setSelectedHub] = useState(REGIONAL_HUBS[0]);
   const [prices, setPrices] = useState(INITIAL_PRICES);
+  const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [notification, setNotification] = useState('');
+  const [isCached, setIsCached] = useState(false);
 
   // Form state
   const [formCount, setFormCount] = useState('30 Count');
   const [formPrice, setFormPrice] = useState('');
   const [formDemand, setFormDemand] = useState('High');
 
-  const handleAddPrice = (e) => {
+  useEffect(() => {
+    let active = true;
+    const cacheKey = `prawnguard_market_prices_${selectedHub}`;
+    const cached = getCache(cacheKey, 20 * 60 * 1000); // 20 mins TTL
+
+    if (cached) {
+      setPrices(cached);
+      setIsCached(true);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setIsCached(false);
+    }
+
+    async function loadSupabaseMarketPrices() {
+      try {
+        const { data, error } = await supabase
+          .from('market_prices')
+          .select('*')
+          .eq('district', selectedHub)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (!error && Array.isArray(data) && data.length > 0 && active) {
+          const merged = INITIAL_PRICES.map((item) => {
+            const shortCount = item.count.replace(' Count', 'c');
+            const match = data.find(
+              (row) => row.count_size === item.count || row.count_size === shortCount
+            );
+            if (!match) return item;
+            return {
+              ...item,
+              price: Number(match.price_per_kg) || item.price,
+              updated: match.recorded_date || 'Synced from Supabase',
+            };
+          });
+
+          setPrices(merged);
+          setCache(cacheKey, merged);
+        } else if (active && !cached) {
+          setCache(cacheKey, INITIAL_PRICES);
+        }
+      } catch (_) {
+        // Fallback to seed prices when offline or unconfigured
+        if (active && !cached) {
+          setPrices(INITIAL_PRICES);
+          setCache(cacheKey, INITIAL_PRICES);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadSupabaseMarketPrices();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedHub]);
+
+  const handleAddPrice = async (e) => {
     e.preventDefault();
     if (!formPrice) return;
 
@@ -82,8 +144,21 @@ export default function MarketPrices() {
     });
 
     setPrices(updated);
+    setCache(`prawnguard_market_prices_${selectedHub}`, updated);
     setShowModal(false);
     setFormPrice('');
+
+    try {
+      await supabase.from('market_prices').insert({
+        district: selectedHub,
+        species: 'vannamei',
+        count_size: formCount.replace(' Count', 'c'),
+        price_per_kg: newPriceVal,
+      });
+    } catch (_) {
+      // Optimistic local state already updated
+    }
+
     setNotification(`Updated ${formCount} rate to ₹${newPriceVal}/kg in ${selectedHub}`);
     setTimeout(() => setNotification(''), 4000);
   };
@@ -108,6 +183,13 @@ export default function MarketPrices() {
         </div>
 
         <div className="flex items-center gap-3">
+          {isCached && (
+            <div className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-[#171717] px-3 py-1.5 border border-white/[0.08] text-[11px] font-mono text-slate-400">
+              <Database className="h-3.5 w-3.5 text-[#10B981]" />
+              <span>Cached</span>
+            </div>
+          )}
+
           <button
             onClick={handleBroadcast}
             className="flex items-center gap-2 rounded-xl bg-[#171717] border border-white/[0.08] px-4 py-2 text-sm font-medium text-slate-200 hover:border-[#00E5FF]/40 hover:text-white transition-all shadow-sm"
@@ -154,88 +236,96 @@ export default function MarketPrices() {
 
       {/* Pricing Cards Grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-        {prices.map((item) => (
-          <div
-            key={item.count}
-            className="rounded-2xl bg-[#171717] border border-white/[0.08] p-5 shadow-lg flex flex-col justify-between hover:border-[#00E5FF]/30 transition-all"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold font-mono text-slate-400">{item.count}</span>
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  item.demand === 'High' || item.demand === 'Very High'
-                    ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30'
-                    : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {item.demand}
-              </span>
-            </div>
-
-            <div className="my-4">
-              <div className="text-2xl font-bold font-heading text-white">
-                ₹{item.price}
-                <span className="text-xs font-normal text-slate-400 ml-1">/kg</span>
+        {loading ? (
+          <SkeletonCard count={6} />
+        ) : (
+          prices.map((item) => (
+            <div
+              key={item.count}
+              className="rounded-2xl bg-[#171717] border border-white/[0.08] p-5 shadow-lg flex flex-col justify-between hover:border-[#00E5FF]/30 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold font-mono text-slate-400">{item.count}</span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    item.demand === 'High' || item.demand === 'Very High'
+                      ? 'bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {item.demand}
+                </span>
               </div>
-              <div className="flex items-center gap-1 mt-1 text-xs">
-                {item.isUp ? (
-                  <span className="flex items-center text-[#10B981] font-semibold">
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                    {item.change}
-                  </span>
-                ) : (
-                  <span className="flex items-center text-[#E55C5C] font-semibold">
-                    <ArrowDownRight className="h-3.5 w-3.5" />
-                    {item.change}
-                  </span>
-                )}
-                <span className="text-slate-500">• 24h</span>
+
+              <div className="my-4">
+                <div className="text-2xl font-bold font-heading text-white">
+                  ₹{item.price}
+                  <span className="text-xs font-normal text-slate-400 ml-1">/kg</span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-xs">
+                  {item.isUp ? (
+                    <span className="flex items-center text-[#10B981] font-semibold">
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                      {item.change}
+                    </span>
+                  ) : (
+                    <span className="flex items-center text-[#E55C5C] font-semibold">
+                      <ArrowDownRight className="h-3.5 w-3.5" />
+                      {item.change}
+                    </span>
+                  )}
+                  <span className="text-slate-500">• 24h</span>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-slate-500 font-mono">
+                {item.updated}
               </div>
             </div>
-
-            <div className="text-[10px] text-slate-500 font-mono">
-              {item.updated}
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* 30-Day Trend Chart */}
-      <div className="rounded-2xl bg-[#171717] border border-white/[0.08] p-6 shadow-lg">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h3 className="font-heading text-base font-bold text-white">
-              Historical Price Trends ({selectedHub})
-            </h3>
-            <p className="text-xs text-slate-400">
-              Procurement price movement for top commercial count sizes over 30 days (₹/kg)
-            </p>
+      {loading ? (
+        <SkeletonChart height="h-72" />
+      ) : (
+        <div className="rounded-2xl bg-[#171717] border border-white/[0.08] p-6 shadow-lg">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="font-heading text-base font-bold text-white">
+                Historical Price Trends ({selectedHub})
+              </h3>
+              <p className="text-xs text-slate-400">
+                Procurement price movement for top commercial count sizes over 30 days (₹/kg)
+              </p>
+            </div>
+          </div>
+
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={HISTORICAL_TRENDS}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickLine={false} />
+                <YAxis stroke="#64748b" fontSize={11} domain={[280, 440]} tickLine={false} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#0A0A0B',
+                    borderColor: '#ffffff20',
+                    borderRadius: '0.75rem',
+                    color: '#fff',
+                    fontSize: '12px',
+                  }}
+                />
+                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                <Line type="monotone" dataKey="count30" name="30 Count" stroke="#00E5FF" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="count40" name="40 Count" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="count50" name="50 Count" stroke="#E5B05C" strokeWidth={2} dot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
-
-        <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={HISTORICAL_TRENDS}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-              <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickLine={false} />
-              <YAxis stroke="#64748b" fontSize={11} domain={[280, 440]} tickLine={false} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#0A0A0B',
-                  borderColor: '#ffffff20',
-                  borderRadius: '0.75rem',
-                  color: '#fff',
-                  fontSize: '12px',
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-              <Line type="monotone" dataKey="count30" name="30 Count" stroke="#00E5FF" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="count40" name="40 Count" stroke="#10B981" strokeWidth={2} dot={{ r: 3 }} />
-              <Line type="monotone" dataKey="count50" name="50 Count" stroke="#E5B05C" strokeWidth={2} dot={{ r: 3 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+      )}
 
       {/* Modal Dialog for Updating Price */}
       {showModal && (

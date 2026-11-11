@@ -36,7 +36,7 @@ class DailyFeedPlan {
   /// Total estimated live shrimp biomass in kg.
   final double biomassKg;
 
-  /// DOC-dependent feeding rate percentage as a decimal (0.03 - 0.08).
+  /// DOC/ABW-dependent feeding rate percentage as a decimal (0.018 - 0.08).
   final double feedingRate;
 
   /// Baseline daily feed requirement before environmental factors in kg.
@@ -78,6 +78,10 @@ class DailyFeedPlan {
 
   /// Total sum of all 4 meals in kg.
   double get mealsTotal => meal1Kg + meal2Kg + meal3Kg + meal4Kg;
+
+  /// Estimated daily feed cost in INR at standard AP grower/finisher feed rate (default ₹92/kg).
+  double estimatedDailyCostInr([double feedPricePerKgInr = 92.0]) =>
+      adjustedDailyFeedKg * feedPricePerKgInr;
 
   /// Returns structured list of the 4 scheduled meals.
   List<MealScheduleItem> get mealSchedule => [
@@ -139,7 +143,7 @@ enum CheckTrayStatus {
   /// Minimal crumbs / optimal consumption -> adjust slightly (+5% to +10%).
   trace,
 
-  /// Expected normal consumption -> slight routine reduction (-10%).
+  /// Expected normal consumption -> maintain ration (0%).
   normal,
 
   /// Heavy leftovers remaining -> reduce ration (-15%).
@@ -154,6 +158,7 @@ enum CheckTrayStatus {
 /// Implements:
 /// - Biomass calculation: `(Density [pcs/m²] * Area [m²] * SurvivalRate * (ABW [g] / 1000))`
 /// - DOC-based feeding rate curve: `clamp(0.08 - (DOC * 0.0005), 0.03, 0.08)`
+/// - Late-DOC Large Shrimp Finisher Curve (CP/Avanti/ICAR-CIBA standard for ABW > 22g): tapers down to `1.8%` BW
 /// - Temperature adjustment factors: `T < 24°C: 0.85; 24°C <= T <= 32°C: 1.00; T > 32°C: 0.90`
 /// - Check-tray feedback adjustments: `clamp(1.0 + trayAdjustment, 0.80, 1.10)`
 /// - 4-Meal daily distribution: 20% (6 AM), 30% (11 AM), 30% (4 PM), 20% (9 PM).
@@ -218,7 +223,25 @@ class FeedAIService {
     return baseRate.clamp(0.03, 0.08);
   }
 
-  /// Calculates water temperature adjustment factor $F_T$:
+  /// ICAR-CIBA & CP/Avanti Bio-Energetic Finisher Curve that accounts for both DOC and large ABW (>22g).
+  ///
+  /// When shrimp exceed 22g (45 count and larger), metabolic feed demand per gram of body weight drops
+  /// from 3.0% down to 1.8% (at 34g+ / 30 count) to prevent bottom sludge and ammonia spikes.
+  double calculateBioEnergeticFeedingRate({
+    required int doc,
+    required double abwGrams,
+  }) {
+    final docRate = calculateFeedingRate(doc);
+    if (abwGrams <= 22.0) {
+      return docRate;
+    }
+    // Linearly taper from 3.0% at 22g down to 1.8% at 34g+
+    final excessGrams = (abwGrams - 22.0).clamp(0.0, 12.0);
+    final abwTaperedRate = (0.030 - (excessGrams * 0.001)).clamp(0.018, 0.030);
+    return abwTaperedRate < docRate ? abwTaperedRate : docRate;
+  }
+
+  /// Calculates water temperature adjustment factor F_T:
   /// - `T < 24.0°C` -> `0.85` (Reduced metabolic rate & digestion)
   /// - `24.0°C <= T <= 32.0°C` -> `1.00` (Optimal growth window)
   /// - `T > 32.0°C` -> `0.90` (Heat stress, high oxygen demand, feed decay risk)
@@ -247,15 +270,15 @@ class FeedAIService {
   double trayAdjustmentFromStatus(CheckTrayStatus status) {
     switch (status) {
       case CheckTrayStatus.clean:
-        return -0.20; // Underfed / fast consumption
+        return 0.10; // Tray empty -> shrimp hungry, increase ration (+10%)
       case CheckTrayStatus.trace:
-        return 0.10; // Optimal / healthy appetite
+        return 0.05; // Minimal crumbs -> slight increase (+5%)
       case CheckTrayStatus.normal:
-        return -0.10; // Standard maintenance
+        return 0.00; // Expected normal consumption -> maintain ration (0%)
       case CheckTrayStatus.heavy:
-        return -0.15; // Leftover feed in tray
+        return -0.15; // Heavy leftovers in tray -> reduce ration (-15%)
       case CheckTrayStatus.uneaten:
-        return -0.20; // Emergency reduction / stress
+        return -0.20; // Emergency reduction / stress -> cut ration (-20%)
     }
   }
 
@@ -270,6 +293,7 @@ class FeedAIService {
   /// - [temperature]: Current pond water temperature in °C.
   /// - [trayAdjustment]: Optional signed adjustment decimal (-0.20 to +0.10).
   /// - [trayStatus]: Optional enum specifying check tray observation.
+  /// - [applyLargeShrimpCurve]: When true, applies the 1.8%-3.0% finisher taper for ABW > 22g.
   DailyFeedPlan calculateDailyFeed({
     required double density,
     required double areaHa,
@@ -279,6 +303,7 @@ class FeedAIService {
     required double temperature,
     double? trayAdjustment,
     CheckTrayStatus? trayStatus,
+    bool applyLargeShrimpCurve = false,
   }) {
     final biomass = calculateBiomass(
       density: density,
@@ -287,7 +312,9 @@ class FeedAIService {
       abw: abw,
     );
 
-    final feedingRate = calculateFeedingRate(doc);
+    final feedingRate = applyLargeShrimpCurve
+        ? calculateBioEnergeticFeedingRate(doc: doc, abwGrams: abw)
+        : calculateFeedingRate(doc);
     final baseFeed = biomass * feedingRate;
     final tempFactor = calculateTempFactor(temperature);
 

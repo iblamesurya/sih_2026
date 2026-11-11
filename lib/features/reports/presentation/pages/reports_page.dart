@@ -1,13 +1,118 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/providers/app_providers.dart';
+import '../../../../core/services/subscription_service.dart';
 
 /// Reports & Crop Analytics Export Page (/reports).
 class ReportsPage extends ConsumerWidget {
   const ReportsPage({super.key});
+
+  void _showAuditPreviewModal(
+    BuildContext context, {
+    required bool isTelugu,
+    required int totalPonds,
+    required double totalAreaHa,
+    required int avgDoc,
+    required String avgFcr,
+    required double totalFeedKg,
+    required double estTotalBiomassKg,
+    required int waterLogsCount,
+    required int scansCount,
+    required double totalExpenses,
+    required double totalRevenue,
+  }) {
+    final netProfit = totalRevenue - totalExpenses;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      isTelugu
+                          ? 'డిజిటల్ పంట ఆడిట్ నివేదిక (PDF ప్రివ్యూ)'
+                          : 'Digital Crop Audit Certificate (Preview)',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const Divider(color: AppColors.cardBorder),
+                const SizedBox(height: 8),
+                Text(
+                  '• Ponds Audited: $totalPonds (${totalAreaHa.toStringAsFixed(1)} Ha) • Avg DOC $avgDoc\n'
+                  '• Estimated Biomass: ${estTotalBiomassKg.toStringAsFixed(0)} kg • Avg FCR: $avgFcr\n'
+                  '• Water Telemetry Logs Verified: $waterLogsCount readings\n'
+                  '• PrawnDoc Pathology Scans: $scansCount records\n'
+                  '• Financial Ledger: Revenue ₹${totalRevenue.toStringAsFixed(0)} | Expenses ₹${totalExpenses.toStringAsFixed(0)} | Net ₹${netProfit.toStringAsFixed(0)}',
+                  style: GoogleFonts.outfit(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondary,
+                      foregroundColor: AppColors.background,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isTelugu
+                                ? 'వాట్సాప్ / బ్యాంక్ ఆడిట్ కోసం PDF నివేదిక సిద్ధంగా ఉంది!'
+                                : 'Comprehensive Crop Audit PDF ready for WhatsApp & Bank submission!',
+                          ),
+                          backgroundColor: AppColors.secondary,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.share, size: 18),
+                    label: Text(
+                      isTelugu
+                          ? 'వాట్సాప్ / బ్యాంక్‌కు షేర్ చేయండి'
+                          : 'Share PDF via WhatsApp / Bank Desk',
+                      style: GoogleFonts.spaceGrotesk(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -17,6 +122,7 @@ class ReportsPage extends ConsumerWidget {
     final feedLogs = ref.watch(feedLogsProvider);
     final waterLogs = ref.watch(waterLogsProvider);
     final harvests = ref.watch(harvestsProvider);
+    final expenses = ref.watch(expensesProvider);
     final scans = ref.watch(diseaseScansProvider);
 
     final totalPonds = ponds.length;
@@ -34,13 +140,17 @@ class ReportsPage extends ConsumerWidget {
       final area = (p['areaHa'] as num?)?.toDouble() ?? 1.0;
       final density = (p['stockingDensity'] as num?)?.toInt() ?? 50;
       final doc = (p['doc'] as num?)?.toInt() ?? 45;
-      final abw = doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : 18.5;
+      final abw = (p['abw'] as num?)?.toDouble() ??
+          (doc > 30 ? (doc * 0.28).clamp(3.0, 35.0) : 18.5);
       return sum + (area * 10000 * density * 0.85 * abw / 1000);
     });
 
     final avgFcr = harvests.isNotEmpty
         ? (harvests.fold<double>(0.0, (sum, h) => sum + h.fcr) / harvests.length).toStringAsFixed(2)
         : '1.25';
+
+    final totalExpenses = expenses.fold<double>(0.0, (s, e) => s + e.amount);
+    final totalRevenue = harvests.fold<double>(0.0, (s, h) => s + h.totalRevenue);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -55,6 +165,26 @@ class ReportsPage extends ConsumerWidget {
             color: AppColors.textPrimary,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.visibility_outlined, color: AppColors.primary),
+            tooltip: isTelugu ? 'నివేదిక ప్రివ్యూ' : 'Preview Full Crop Audit',
+            onPressed: () => _showAuditPreviewModal(
+              context,
+              isTelugu: isTelugu,
+              totalPonds: totalPonds,
+              totalAreaHa: totalAreaHa,
+              avgDoc: avgDoc,
+              avgFcr: avgFcr,
+              totalFeedKg: totalFeedKg,
+              estTotalBiomassKg: estTotalBiomassKg,
+              waterLogsCount: waterLogs.length,
+              scansCount: scans.length,
+              totalExpenses: totalExpenses,
+              totalRevenue: totalRevenue,
+            ),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -134,51 +264,68 @@ class ReportsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
 
-          _ReportTile(
-            title: 'Water Quality Telemetry Logbook',
-            subtitle: '${waterLogs.length} Telemetry records logged • pH, DO, Salinity & Ammonia audit',
-            onExport: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Exported Water Quality Logbook (${waterLogs.length} readings) to PDF!'),
-                  backgroundColor: AppColors.secondary,
-                ),
-              );
-            },
-          ),
-          _ReportTile(
-            title: 'Feed Efficiency & FCR Ledger',
-            subtitle: '${feedLogs.length} Feeding schedules • 4-meal daily allocations & tray feedback',
-            onExport: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Exported Feed Efficiency Ledger (${feedLogs.length} records) to PDF!'),
-                  backgroundColor: AppColors.secondary,
-                ),
-              );
-            },
-          ),
-          _ReportTile(
-            title: 'PrawnDoc AI Pathology History',
-            subtitle: '${scans.length} Disease diagnostic scans with vision confidence and biosecurity protocols',
-            onExport: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Exported Disease Vision Pathology History (${scans.length} scans) to PDF!'),
-                  backgroundColor: AppColors.secondary,
-                ),
-              );
-            },
-          ),
-          _ReportTile(
-            title: 'Financial Cashflow & PrawnCredit Score',
-            subtitle: 'Revenue, expenses, net profit ledger and bank micro-loan eligibility certificate',
-            onExport: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Exported PrawnCredit Financial Certificate & Audit to PDF!'),
-                  backgroundColor: AppColors.secondary,
-                ),
+          Builder(
+            builder: (context) {
+              final subService = ref.watch(subscriptionServiceProvider);
+              final tier = ref.watch(currentSubscriptionTierProvider);
+              final exportedCount = ref.watch(exportedReportsCountProvider);
+              final isPro = tier == SubscriptionTier.pro;
+
+              void handleReportExport(String message) {
+                if (!subService.canExportReport(
+                  currentReportsThisMonth: exportedCount,
+                  isPro: isPro,
+                )) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Free tier report export limit reached (Max 3/month). Upgrade to Pro for unlimited PDF exports!',
+                      ),
+                      backgroundColor: AppColors.alertUrgent,
+                    ),
+                  );
+                  return;
+                }
+                ref.read(exportedReportsCountProvider.notifier).state = exportedCount + 1;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(message),
+                    backgroundColor: AppColors.secondary,
+                  ),
+                );
+              }
+
+              return Column(
+                children: [
+                  _ReportTile(
+                    title: 'Water Quality Telemetry Logbook',
+                    subtitle: '${waterLogs.length} Telemetry records logged • pH, DO, Salinity & Ammonia audit',
+                    onExport: () => handleReportExport(
+                      'Exported Water Quality Logbook (${waterLogs.length} readings) to PDF!',
+                    ),
+                  ),
+                  _ReportTile(
+                    title: 'Feed Efficiency & FCR Ledger',
+                    subtitle: '${feedLogs.length} Feeding schedules • 4-meal daily allocations & tray feedback',
+                    onExport: () => handleReportExport(
+                      'Exported Feed Efficiency Ledger (${feedLogs.length} records) to PDF!',
+                    ),
+                  ),
+                  _ReportTile(
+                    title: 'PrawnDoc AI Pathology History',
+                    subtitle: '${scans.length} Disease diagnostic scans with vision confidence and biosecurity protocols',
+                    onExport: () => handleReportExport(
+                      'Exported Disease Vision Pathology History (${scans.length} scans) to PDF!',
+                    ),
+                  ),
+                  _ReportTile(
+                    title: 'Financial Cashflow & PrawnCredit Score',
+                    subtitle: 'Revenue, expenses, net profit ledger and bank micro-loan eligibility certificate',
+                    onExport: () => handleReportExport(
+                      'Exported PrawnCredit Financial Certificate & Audit to PDF!',
+                    ),
+                  ),
+                ],
               );
             },
           ),

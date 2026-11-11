@@ -150,7 +150,7 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
                     ),
                     const SizedBox(height: 6),
                     DropdownButtonFormField<String>(
-                      value: category,
+                      initialValue: category,
                       dropdownColor: AppColors.surfaceElevated,
                       style: GoogleFonts.outfit(color: AppColors.textPrimary),
                       decoration: InputDecoration(
@@ -512,6 +512,55 @@ class _CommunityPageState extends ConsumerState<CommunityPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Regional Outbreak & Biosecurity Broadcast Banner
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFF281114),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.alertUrgent, width: 1.5),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.campaign,
+                  color: AppColors.alertUrgent,
+                  size: 24,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isTelugu
+                            ? 'ప్రాంతీయ వ్యాధి హెచ్చరిక (10 కి.మీ పరిధిలో)'
+                            : 'Regional Outbreak Alert (10 km Radius)',
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.alertUrgent,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        isTelugu
+                            ? 'భీమవరం / కైకలూరు క్లస్టర్‌లో తెల్లమచ్చ (WSSV) కేసులు నమోదయ్యాయి. కాలువ నీటిని నేరుగా తీసుకోవద్దు & క్రాబ్ ఫెన్సింగ్ తనిఖీ చేయండి.'
+                            : 'WSSV cases reported in Bhimavaram / Kaikaluru cluster. Seal direct canal intakes, chlorinate reservoir water, and enforce crab fencing.',
+                        style: GoogleFonts.outfit(
+                          fontSize: 12,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // Community Banner
           Container(
             padding: const EdgeInsets.all(16),

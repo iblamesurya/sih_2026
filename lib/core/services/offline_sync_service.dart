@@ -238,9 +238,42 @@ class OfflineSyncService {
 
   /// Default mutation executor against Supabase.
   Future<bool> _defaultExecutor(Map<String, dynamic> mutation) async {
-    final table = mutation['table'] as String?;
-    final action = mutation['action'] as String? ?? 'insert';
-    final payload = mutation['payload'] as Map<String, dynamic>? ?? {};
+    String? table = mutation['table'] as String?;
+    String action = mutation['action'] as String? ?? 'insert';
+    Map<String, dynamic> payload =
+        (mutation['payload'] is Map) ? Map<String, dynamic>.from(mutation['payload'] as Map) : {};
+
+    // Support legacy/typed UI mutation envelopes seamlessly
+    if (table == null || table.isEmpty) {
+      final type = (mutation['type'] as String? ?? '').toUpperCase();
+      switch (type) {
+        case 'INSERT_WATER_LOG':
+          table = 'water_logs';
+          payload = Map<String, dynamic>.from((mutation['log_data'] as Map?) ?? {});
+          break;
+        case 'INSERT_FEED_PLAN':
+          table = 'feed_logs';
+          payload = Map<String, dynamic>.from((mutation['feed_data'] as Map?) ?? {});
+          break;
+        case 'INSERT_POND':
+          table = 'ponds';
+          payload = Map<String, dynamic>.from((mutation['pond_data'] as Map?) ?? {});
+          break;
+        case 'INSERT_DISEASE_SCAN':
+          table = 'disease_scans';
+          payload = Map<String, dynamic>.from((mutation['scan_data'] as Map?) ?? {});
+          break;
+        case 'INSERT_EXPENSE':
+          table = 'expenses';
+          payload = Map<String, dynamic>.from((mutation['expense_data'] as Map?) ?? {});
+          break;
+        case 'INSERT_HARVEST':
+          table = 'harvests';
+          payload = Map<String, dynamic>.from((mutation['harvest_data'] as Map?) ?? {});
+          break;
+      }
+    }
+
     final primaryKey = mutation['primary_key'] as String? ?? 'id';
     final id = mutation['target_id'] ?? payload[primaryKey];
 

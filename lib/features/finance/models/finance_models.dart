@@ -100,15 +100,18 @@ class Expense {
       };
 
   factory Expense.fromJson(Map<String, dynamic> json) => Expense(
-        id: json['id'] as String,
+        id: (json['id'] ?? '').toString(),
         category: ExpenseCategory.values.firstWhere(
           (e) => e.name == json['category'],
           orElse: () => ExpenseCategory.other,
         ),
-        amount: (json['amount'] as num).toDouble(),
-        date: DateTime.parse(json['date'] as String),
-        pondId: json['pondId'] as String,
-        pondName: json['pondName'] as String,
+        amount: ((json['amount'] as num?) ?? 0).toDouble(),
+        date: DateTime.tryParse(
+              (json['date'] ?? json['incurred_at'] ?? '').toString(),
+            ) ??
+            DateTime.now(),
+        pondId: (json['pondId'] ?? json['pond_id'] ?? 'all').toString(),
+        pondName: (json['pondName'] ?? json['pond_name'] ?? 'All Ponds').toString(),
         supplier: json['supplier'] as String?,
         notes: json['notes'] as String?,
       );
@@ -155,16 +158,19 @@ class HarvestRecord {
       };
 
   factory HarvestRecord.fromJson(Map<String, dynamic> json) => HarvestRecord(
-        id: json['id'] as String,
-        date: DateTime.parse(json['date'] as String),
-        pondId: json['pondId'] as String,
-        pondName: json['pondName'] as String,
-        harvestType: json['harvestType'] as String,
-        biomassKg: (json['biomassKg'] as num).toDouble(),
-        countPerKg: (json['countPerKg'] as num).toInt(),
-        pricePerKg: (json['pricePerKg'] as num).toDouble(),
-        fcr: (json['fcr'] as num).toDouble(),
-        buyerName: json['buyerName'] as String?,
+        id: (json['id'] ?? '').toString(),
+        date: DateTime.tryParse(
+              (json['date'] ?? json['harvested_at'] ?? '').toString(),
+            ) ??
+            DateTime.now(),
+        pondId: (json['pondId'] ?? json['pond_id'] ?? 'p1').toString(),
+        pondName: (json['pondName'] ?? json['pond_name'] ?? 'Pond 1').toString(),
+        harvestType: (json['harvestType'] ?? json['harvest_type'] ?? 'Complete').toString(),
+        biomassKg: ((json['biomassKg'] ?? json['biomass_kg'] ?? 0) as num).toDouble(),
+        countPerKg: ((json['countPerKg'] ?? json['count_per_kg'] ?? 40) as num).toInt(),
+        pricePerKg: ((json['pricePerKg'] ?? json['price_per_kg'] ?? 350) as num).toDouble(),
+        fcr: ((json['fcr'] ?? 1.35) as num).toDouble(),
+        buyerName: (json['buyerName'] ?? json['buyer_name']) as String?,
       );
 }
 
