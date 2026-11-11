@@ -178,7 +178,16 @@ if ($Target -in @("All", "Admin")) {
                 Write-Host "     [✓] $($jsFile.Name) is already protected by BLA shield" -ForegroundColor Green
             } else {
                 Write-Host "     Injecting adversarial shield into $($jsFile.Name)..." -ForegroundColor Gray
-                & node $BlaCli protect $jsFile.FullName --in-place --intensity $Intensity --allow-lane-independent 2>&1 | Out-Null
+                try {
+                    $res = & node $BlaCli protect $jsFile.FullName --in-place --intensity $Intensity --allow-lane-independent 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "     [✓] $($jsFile.Name) successfully shielded" -ForegroundColor Green
+                    } else {
+                        Write-Warning "BLA protect warning on $($jsFile.Name)"
+                    }
+                } catch {
+                    Write-Warning "Could not shield $($jsFile.Name): $_"
+                }
             }
         }
 
