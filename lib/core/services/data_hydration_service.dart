@@ -248,22 +248,42 @@ class DataHydrationService {
     }
   }
 
+  /// Flushes pending outbox mutations before remote state hydration to prevent
+  /// stale remote database state from clobbering uncommitted local mutations.
+  Future<int> flushPendingOutbox(
+    dynamic ref, {
+    OfflineSyncService? offlineSync,
+  }) async {
+    final syncService =
+        offlineSync ?? ref.read(offlineSyncProvider) as OfflineSyncService;
+    int drained = 0;
+    try {
+      drained = await syncService.drainQueue();
+    } catch (e) {
+      debugPrint('DataHydrationService.flushPendingOutbox notice: $e');
+    }
+    await refreshPendingSyncCount(ref, offlineSync: syncService);
+    return drained;
+  }
+
   /// Hydrates state from both local `SharedPreferences` and remote Supabase tables,
-  /// drains the offline sync queue, and merges remote records without losing local data.
+  /// strictly enforcing flush-before-hydrate ordering to prevent overwriting unsynced mutations,
+  /// and merges remote records with local precedence.
   Future<void> hydrateAll(
     dynamic ref, {
     FarmDataRepository? repository,
     OfflineSyncService? offlineSync,
   }) async {
+    // 1. Instant local render from device snapshot (0ms latency)
     await restoreFromLocalSnapshot(ref);
 
-    final syncService = offlineSync ?? ref.read(offlineSyncProvider) as OfflineSyncService;
-    try {
-      await syncService.drainQueue();
-    } catch (_) {}
-    await refreshPendingSyncCount(ref, offlineSync: syncService);
+    // 2. ENFORCE FLUSH-BEFORE-HYDRATE: Drain pending outbox mutations before remote queries
+    final syncService =
+        offlineSync ?? ref.read(offlineSyncProvider) as OfflineSyncService;
+    await flushPendingOutbox(ref, offlineSync: syncService);
 
-    final repo = repository ?? ref.read(farmDataRepositoryProvider) as FarmDataRepository;
+    final repo =
+        repository ?? ref.read(farmDataRepositoryProvider) as FarmDataRepository;
     final farm = ref.read(currentFarmProvider) as Map<String, dynamic>?;
     final farmId = farm?['id']?.toString();
 

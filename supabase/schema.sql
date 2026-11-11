@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS public.farms (
 CREATE TABLE IF NOT EXISTS public.ponds (
     id TEXT PRIMARY KEY DEFAULT ('pond_' || extract(epoch from now())::bigint::text),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    farmer_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     farm_id UUID REFERENCES public.farms(id) ON DELETE SET NULL,
     name TEXT NOT NULL,
     species TEXT NOT NULL DEFAULT 'L. vannamei',
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS public.ponds (
     current_abw DOUBLE PRECISION NOT NULL DEFAULT 15.0 CHECK (current_abw >= 0),
     survival_rate DOUBLE PRECISION NOT NULL DEFAULT 0.85 CHECK (survival_rate >= 0 AND survival_rate <= 1.0),
     status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Fallow', 'Harvested', 'Maintenance')),
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -106,6 +108,7 @@ CREATE TABLE IF NOT EXISTS public.water_logs (
     turbidity_cm DOUBLE PRECISION,
     overall_severity TEXT DEFAULT 'optimal' CHECK (overall_severity IN ('optimal', 'watch', 'urgent')),
     source TEXT DEFAULT 'manual' CHECK (source IN ('manual', 'voice_nlu', 'iot_sensor')),
+    idempotency_key UUID UNIQUE,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -136,6 +139,7 @@ CREATE TABLE IF NOT EXISTS public.feed_logs (
     check_tray_status TEXT DEFAULT 'normal' CHECK (check_tray_status IN ('clean', 'trace', 'normal', 'heavy', 'uneaten')),
     tray_adjustment DOUBLE PRECISION DEFAULT 0.0,
     temperature_c DOUBLE PRECISION DEFAULT 28.5,
+    idempotency_key UUID UNIQUE,
     fed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -160,6 +164,7 @@ CREATE TABLE IF NOT EXISTS public.disease_scans (
     treatment_plan JSONB DEFAULT '[]'::jsonb,
     water_context JSONB DEFAULT '{}'::jsonb,
     farmer_notes TEXT,
+    idempotency_key UUID UNIQUE,
     scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -197,6 +202,7 @@ CREATE TABLE IF NOT EXISTS public.abw_samples (
     uniformity_pct DOUBLE PRECISION DEFAULT 85.0,
     shell_condition TEXT DEFAULT 'Hard / Normal',
     gut_fullness_pct DOUBLE PRECISION DEFAULT 90.0,
+    idempotency_key UUID UNIQUE,
     sampled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -213,6 +219,7 @@ CREATE TABLE IF NOT EXISTS public.expenses (
     amount DOUBLE PRECISION NOT NULL CHECK (amount >= 0),
     supplier TEXT,
     notes TEXT,
+    idempotency_key UUID UNIQUE,
     expense_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -232,6 +239,7 @@ CREATE TABLE IF NOT EXISTS public.harvests (
     total_revenue DOUBLE PRECISION GENERATED ALWAYS AS (biomass_kg * price_per_kg) STORED,
     fcr DOUBLE PRECISION NOT NULL DEFAULT 1.3 CHECK (fcr >= 0),
     buyer_name TEXT,
+    idempotency_key UUID UNIQUE,
     harvest_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -306,6 +314,18 @@ CREATE TABLE IF NOT EXISTS public.notification_preferences (
 );
 
 -- =============================================================================
+-- 16. MUTATION LEDGER (Idempotency Tracking)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS public.mutation_ledger (
+    idempotency_key UUID PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    table_name TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    payload JSONB,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
 -- INDEXES FOR HIGH-THROUGHPUT AQUACULTURE TELEMETRY QUERIES
 -- =============================================================================
 CREATE INDEX IF NOT EXISTS idx_farms_owner_id ON public.farms(owner_id);
@@ -328,6 +348,7 @@ CREATE INDEX IF NOT EXISTS idx_harvests_pond_id ON public.harvests(pond_id);
 CREATE INDEX IF NOT EXISTS idx_market_prices_hub_count ON public.market_prices(hub_name, count_per_kg, effective_date DESC);
 CREATE INDEX IF NOT EXISTS idx_admin_announcements_status ON public.admin_announcements(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_events_user_created ON public.activity_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mutation_ledger_user_applied ON public.mutation_ledger(user_id, applied_at DESC);
 
 -- =============================================================================
 -- ATOMIC QUOTA RPC: increment_scan_count
@@ -404,6 +425,52 @@ END;
 $$;
 
 -- =============================================================================
+-- IMMUTABLE ROLE & ADMIN HELPER: is_admin
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT COALESCE(
+        (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+        OR (auth.jwt() ->> 'role') = 'service_role'
+        OR EXISTS (
+            SELECT 1 FROM public.profiles
+            WHERE id = auth.uid() AND role = 'admin'
+        ),
+        FALSE
+    );
+$$;
+
+-- =============================================================================
+-- OPTIMISTIC CONCURRENCY TRIGGER: increment_pond_version
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.increment_pond_version()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.version IS NOT NULL AND NEW.version != OLD.version AND NEW.version != (OLD.version + 1) THEN
+        RAISE EXCEPTION 'Optimistic concurrency error: pond version mismatch (current %, provided %)',
+            OLD.version, NEW.version
+            USING ERRCODE = 'P0002';
+    END IF;
+    NEW.version := OLD.version + 1;
+    NEW.updated_at := NOW();
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_increment_pond_version ON public.ponds;
+CREATE TRIGGER trg_increment_pond_version
+    BEFORE UPDATE ON public.ponds
+    FOR EACH ROW
+    EXECUTE FUNCTION public.increment_pond_version();
+
+-- =============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- =============================================================================
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -421,6 +488,7 @@ ALTER TABLE public.market_prices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notification_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.mutation_ledger ENABLE ROW LEVEL SECURITY;
 
 -- Profiles: users can view and update their own profile
 CREATE POLICY "profiles_select_own" ON public.profiles
@@ -436,66 +504,343 @@ CREATE POLICY "farms_all_own" ON public.farms
 
 -- Ponds: owner full CRUD
 CREATE POLICY "ponds_all_own" ON public.ponds
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR auth.uid() = farmer_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR auth.uid() = farmer_id OR public.is_admin());
 
 -- Crop cycles: owner full CRUD
 CREATE POLICY "crop_cycles_all_own" ON public.crop_cycles
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
--- Water logs: owner full CRUD
+-- Water logs: transitive isolation through ponds
 CREATE POLICY "water_logs_all_own" ON public.water_logs
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = water_logs.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    )
+    WITH CHECK (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = water_logs.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    );
 
--- Feed logs: owner full CRUD
+-- Feed logs: transitive isolation through ponds
 CREATE POLICY "feed_logs_all_own" ON public.feed_logs
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = feed_logs.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    )
+    WITH CHECK (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = feed_logs.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    );
 
 -- Disease scans: owner full CRUD
 CREATE POLICY "disease_scans_all_own" ON public.disease_scans
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
 -- Growth samples: owner full CRUD
 CREATE POLICY "growth_samples_all_own" ON public.growth_samples
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
 -- ABW samples: owner full CRUD
 CREATE POLICY "abw_samples_all_own" ON public.abw_samples
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
--- Expenses: owner full CRUD
+-- Expenses: transitive isolation through ponds
 CREATE POLICY "expenses_all_own" ON public.expenses
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = expenses.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    )
+    WITH CHECK (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = expenses.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    );
 
--- Harvests: owner full CRUD
+-- Harvests: transitive isolation through ponds
 CREATE POLICY "harvests_all_own" ON public.harvests
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = harvests.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    )
+    WITH CHECK (
+        (auth.uid() = user_id OR public.is_admin()) AND
+        EXISTS (
+            SELECT 1 FROM public.ponds p
+            WHERE p.id = harvests.pond_id
+              AND (p.user_id = auth.uid() OR p.farmer_id = auth.uid() OR public.is_admin())
+        )
+    );
 
--- Market prices: public read for all authenticated/anon users; admin write
+-- Market prices: public read for all authenticated/anon users; immutable admin write
 CREATE POLICY "market_prices_select_all" ON public.market_prices
     FOR SELECT USING (true);
 CREATE POLICY "market_prices_write_admin" ON public.market_prices
-    FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
+    FOR ALL USING (public.is_admin());
 
--- Admin announcements: public read for all users; admin write
+-- Admin announcements: public read for all users; immutable admin write
 CREATE POLICY "admin_announcements_select_all" ON public.admin_announcements
     FOR SELECT USING (true);
 CREATE POLICY "admin_announcements_write_admin" ON public.admin_announcements
-    FOR ALL USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles
-            WHERE id = auth.uid() AND role = 'admin'
-        )
-    );
+    FOR ALL USING (public.is_admin());
 
 -- Activity events: owner full CRUD
 CREATE POLICY "activity_events_all_own" ON public.activity_events
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
 
 -- Notification preferences: owner full CRUD
 CREATE POLICY "notification_preferences_all_own" ON public.notification_preferences
-    FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
+
+-- Mutation ledger: owner full CRUD
+CREATE POLICY "mutation_ledger_all_own" ON public.mutation_ledger
+    FOR ALL USING (auth.uid() = user_id OR public.is_admin())
+    WITH CHECK (auth.uid() = user_id OR public.is_admin());
+
+-- =============================================================================
+-- ATOMIC IDEMPOTENT MUTATION RPC: apply_idempotent_mutation
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.apply_idempotent_mutation(
+    p_idempotency_key UUID,
+    p_table_name TEXT,
+    p_operation TEXT,
+    p_payload JSONB,
+    p_base_version INT DEFAULT NULL
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_existing_ledger RECORD;
+    v_current_version INT;
+    v_record_id TEXT;
+BEGIN
+    IF v_user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required for mutation' USING ERRCODE = '42501';
+    END IF;
+
+    -- 1. Check mutation ledger for existing idempotency key
+    SELECT * INTO v_existing_ledger
+    FROM public.mutation_ledger
+    WHERE idempotency_key = p_idempotency_key;
+
+    IF FOUND THEN
+        RETURN jsonb_build_object(
+            'status', 'already_applied',
+            'idempotency_key', p_idempotency_key,
+            'table_name', v_existing_ledger.table_name,
+            'operation', v_existing_ledger.operation,
+            'applied_at', v_existing_ledger.applied_at
+        );
+    END IF;
+
+    v_record_id := p_payload->>'id';
+
+    -- 2. Optimistic Concurrency check for ponds
+    IF p_table_name = 'ponds' AND UPPER(p_operation) IN ('UPDATE', 'UPSERT') THEN
+        IF p_base_version IS NOT NULL AND v_record_id IS NOT NULL THEN
+            SELECT version INTO v_current_version
+            FROM public.ponds
+            WHERE id = v_record_id;
+
+            IF FOUND AND v_current_version != p_base_version THEN
+                RAISE EXCEPTION 'Optimistic concurrency error: pond version mismatch (current %, expected %)',
+                    v_current_version, p_base_version
+                    USING ERRCODE = 'P0002';
+            END IF;
+        END IF;
+    END IF;
+
+    -- 3. Execute mutation dynamically by table
+    IF p_table_name = 'water_logs' THEN
+        IF UPPER(p_operation) = 'INSERT' THEN
+            INSERT INTO public.water_logs (
+                id, user_id, pond_id, ph, dissolved_oxygen, salinity,
+                temperature, ammonia, alkalinity, turbidity_cm,
+                overall_severity, source, recorded_at, idempotency_key
+            ) VALUES (
+                COALESCE(v_record_id, 'wlog_' || extract(epoch from now())::bigint::text),
+                v_user_id,
+                p_payload->>'pond_id',
+                (p_payload->>'ph')::DOUBLE PRECISION,
+                (p_payload->>'dissolved_oxygen')::DOUBLE PRECISION,
+                (p_payload->>'salinity')::DOUBLE PRECISION,
+                (p_payload->>'temperature')::DOUBLE PRECISION,
+                (p_payload->>'ammonia')::DOUBLE PRECISION,
+                (p_payload->>'alkalinity')::DOUBLE PRECISION,
+                (p_payload->>'turbidity_cm')::DOUBLE PRECISION,
+                COALESCE(p_payload->>'overall_severity', 'optimal'),
+                COALESCE(p_payload->>'source', 'manual'),
+                COALESCE((p_payload->>'recorded_at')::TIMESTAMPTZ, NOW()),
+                p_idempotency_key
+            )
+            ON CONFLICT (idempotency_key) DO NOTHING;
+        END IF;
+
+    ELSIF p_table_name = 'feed_logs' THEN
+        IF UPPER(p_operation) = 'INSERT' THEN
+            INSERT INTO public.feed_logs (
+                id, user_id, pond_id, doc, biomass_kg, feeding_rate, daily_feed_kg,
+                meal_number, scheduled_time, feed_kg, percent_share,
+                meal1_kg, meal2_kg, meal3_kg, meal4_kg,
+                meal1_completed, meal2_completed, meal3_completed, meal4_completed,
+                check_tray_status, tray_adjustment, temperature_c, fed_at, idempotency_key
+            ) VALUES (
+                COALESCE(v_record_id, 'feed_' || extract(epoch from now())::bigint::text),
+                v_user_id,
+                p_payload->>'pond_id',
+                COALESCE((p_payload->>'doc')::INTEGER, 1),
+                COALESCE((p_payload->>'biomass_kg')::DOUBLE PRECISION, 0),
+                COALESCE((p_payload->>'feeding_rate')::DOUBLE PRECISION, 0.05),
+                COALESCE((p_payload->>'daily_feed_kg')::DOUBLE PRECISION, 0),
+                (p_payload->>'meal_number')::INTEGER,
+                p_payload->>'scheduled_time',
+                (p_payload->>'feed_kg')::DOUBLE PRECISION,
+                (p_payload->>'percent_share')::DOUBLE PRECISION,
+                COALESCE((p_payload->>'meal1_kg')::DOUBLE PRECISION, 0),
+                COALESCE((p_payload->>'meal2_kg')::DOUBLE PRECISION, 0),
+                COALESCE((p_payload->>'meal3_kg')::DOUBLE PRECISION, 0),
+                COALESCE((p_payload->>'meal4_kg')::DOUBLE PRECISION, 0),
+                COALESCE((p_payload->>'meal1_completed')::BOOLEAN, FALSE),
+                COALESCE((p_payload->>'meal2_completed')::BOOLEAN, FALSE),
+                COALESCE((p_payload->>'meal3_completed')::BOOLEAN, FALSE),
+                COALESCE((p_payload->>'meal4_completed')::BOOLEAN, FALSE),
+                COALESCE(p_payload->>'check_tray_status', 'normal'),
+                COALESCE((p_payload->>'tray_adjustment')::DOUBLE PRECISION, 0.0),
+                COALESCE((p_payload->>'temperature_c')::DOUBLE PRECISION, 28.5),
+                COALESCE((p_payload->>'fed_at')::TIMESTAMPTZ, NOW()),
+                p_idempotency_key
+            )
+            ON CONFLICT (idempotency_key) DO NOTHING;
+        END IF;
+
+    ELSIF p_table_name = 'ponds' THEN
+        IF UPPER(p_operation) = 'INSERT' THEN
+            INSERT INTO public.ponds (
+                id, user_id, farmer_id, farm_id, name, species, area_ha,
+                stocking_density, doc, stocking_date, initial_abw,
+                current_abw, survival_rate, status, version
+            ) VALUES (
+                COALESCE(v_record_id, 'pond_' || extract(epoch from now())::bigint::text),
+                v_user_id,
+                v_user_id,
+                (p_payload->>'farm_id')::UUID,
+                p_payload->>'name',
+                COALESCE(p_payload->>'species', 'L. vannamei'),
+                COALESCE((p_payload->>'area_ha')::DOUBLE PRECISION, 1.0),
+                COALESCE((p_payload->>'stocking_density')::DOUBLE PRECISION, 50.0),
+                COALESCE((p_payload->>'doc')::INTEGER, 1),
+                COALESCE((p_payload->>'stocking_date')::DATE, CURRENT_DATE),
+                COALESCE((p_payload->>'initial_abw')::DOUBLE PRECISION, 0.02),
+                COALESCE((p_payload->>'current_abw')::DOUBLE PRECISION, 15.0),
+                COALESCE((p_payload->>'survival_rate')::DOUBLE PRECISION, 0.85),
+                COALESCE(p_payload->>'status', 'Active'),
+                1
+            );
+        ELSIF UPPER(p_operation) = 'UPDATE' THEN
+            UPDATE public.ponds
+            SET name = COALESCE(p_payload->>'name', name),
+                current_abw = COALESCE((p_payload->>'current_abw')::DOUBLE PRECISION, current_abw),
+                doc = COALESCE((p_payload->>'doc')::INTEGER, doc),
+                survival_rate = COALESCE((p_payload->>'survival_rate')::DOUBLE PRECISION, survival_rate),
+                status = COALESCE(p_payload->>'status', status),
+                updated_at = NOW()
+            WHERE id = v_record_id AND (user_id = v_user_id OR farmer_id = v_user_id OR public.is_admin());
+        END IF;
+
+    ELSIF p_table_name = 'expenses' THEN
+        IF UPPER(p_operation) = 'INSERT' THEN
+            INSERT INTO public.expenses (
+                id, user_id, pond_id, pond_name, category,
+                amount, supplier, notes, expense_date, idempotency_key
+            ) VALUES (
+                COALESCE(v_record_id, 'exp_' || extract(epoch from now())::bigint::text),
+                v_user_id,
+                p_payload->>'pond_id',
+                COALESCE(p_payload->>'pond_name', 'Pond 1'),
+                p_payload->>'category',
+                (p_payload->>'amount')::DOUBLE PRECISION,
+                p_payload->>'supplier',
+                p_payload->>'notes',
+                COALESCE((p_payload->>'expense_date')::TIMESTAMPTZ, NOW()),
+                p_idempotency_key
+            )
+            ON CONFLICT (idempotency_key) DO NOTHING;
+        END IF;
+
+    ELSIF p_table_name = 'harvests' THEN
+        IF UPPER(p_operation) = 'INSERT' THEN
+            INSERT INTO public.harvests (
+                id, user_id, pond_id, pond_name, harvest_type,
+                biomass_kg, count_per_kg, price_per_kg, fcr,
+                buyer_name, harvest_date, idempotency_key
+            ) VALUES (
+                COALESCE(v_record_id, 'hrv_' || extract(epoch from now())::bigint::text),
+                v_user_id,
+                p_payload->>'pond_id',
+                COALESCE(p_payload->>'pond_name', 'Pond 1'),
+                COALESCE(p_payload->>'harvest_type', 'Partial'),
+                (p_payload->>'biomass_kg')::DOUBLE PRECISION,
+                (p_payload->>'count_per_kg')::INTEGER,
+                (p_payload->>'price_per_kg')::DOUBLE PRECISION,
+                COALESCE((p_payload->>'fcr')::DOUBLE PRECISION, 1.3),
+                p_payload->>'buyer_name',
+                COALESCE((p_payload->>'harvest_date')::TIMESTAMPTZ, NOW()),
+                p_idempotency_key
+            )
+            ON CONFLICT (idempotency_key) DO NOTHING;
+        END IF;
+    END IF;
+
+    -- 4. Record successful execution into mutation_ledger
+    INSERT INTO public.mutation_ledger (
+        idempotency_key, user_id, table_name, operation, payload, applied_at
+    ) VALUES (
+        p_idempotency_key, v_user_id, p_table_name, p_operation, p_payload, NOW()
+    );
+
+    RETURN jsonb_build_object(
+        'status', 'success',
+        'idempotency_key', p_idempotency_key,
+        'table_name', p_table_name,
+        'operation', p_operation,
+        'applied_at', NOW()
+    );
+END;
+$$;

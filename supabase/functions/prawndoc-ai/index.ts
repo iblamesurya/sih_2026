@@ -22,6 +22,9 @@ interface DiagnosticRequest {
     doc?: number;
   };
   notes?: string;
+  userId?: string;
+  subscriptionTier?: "free" | "pro";
+  dailyScanCount?: number;
 }
 
 interface DiagnosticResponse {
@@ -123,6 +126,61 @@ serve(async (req: Request) => {
       return new Response(
         JSON.stringify({ error: "Missing image payload. Provide base64 'image' or 'imageUrl'." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Server-side Subscription Tier and Scan Quota Gate
+    const authHeader = req.headers.get("Authorization");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_ANON_KEY");
+
+    let isAllowed = true;
+    let remainingScans = 999999;
+    let userTier = body.subscriptionTier ?? "free";
+    let userScansToday = body.dailyScanCount ?? 0;
+
+    // Check quota against Supabase RPC if credentials are present
+    if (supabaseUrl && supabaseServiceKey && (authHeader || body.userId)) {
+      try {
+        const rpcPayload: Record<string, unknown> = {};
+        if (body.userId) rpcPayload["p_user_id"] = body.userId;
+
+        const rpcRes = await fetch(`${supabaseUrl}/rest/v1/rpc/increment_scan_count`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": supabaseServiceKey,
+            "Authorization": authHeader ?? `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify(rpcPayload),
+        });
+
+        if (rpcRes.ok) {
+          const quotaResult = await rpcRes.json();
+          isAllowed = quotaResult.allowed ?? true;
+          remainingScans = quotaResult.remaining ?? 0;
+          userTier = quotaResult.tier ?? userTier;
+        }
+      } catch (quotaErr) {
+        console.warn("Server-side RPC quota check warning:", quotaErr);
+      }
+    } else {
+      // Direct payload validation fallback
+      if (userTier === "free" && userScansToday >= 3) {
+        isAllowed = false;
+        remainingScans = 0;
+      }
+    }
+
+    if (!isAllowed) {
+      return new Response(
+        JSON.stringify({
+          error: "Daily scan limit reached for Free tier (3 scans/day). Please upgrade to Pro for unlimited AI disease diagnosis.",
+          code: "QUOTA_EXCEEDED",
+          tier: userTier,
+          remaining: 0,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 

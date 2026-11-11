@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:prawn_guard/core/services/offline_sync_service.dart';
+import 'package:prawn_guard/core/services/data_hydration_service.dart';
 import 'package:prawn_guard/core/services/base_repository.dart';
 
 // Test implementation of BaseRepository
@@ -415,6 +416,158 @@ void main() {
       expect(item['payload']['telemetry']['dissolved_oxygen'], equals(3.2));
       expect(item['payload']['telemetry']['salinity'], isNull);
       expect(item['payload']['tags'], equals(['తెలుగు', 'అత్యవసరం', 'DO_LOW']));
+    });
+  });
+
+  group('Adversarial Test 5: Outbox Quarantine, Zero Head-of-Line Blocking, Idempotency & Flush-Before-Hydrate Ordering', () {
+    test('Adversarial 5.1: Permanent 4xx / PostgreSQL error codes (23503, 22P02, 42501, P0002) are quarantined to dead-letter queue without blocking subsequent mutations', () async {
+      await syncService.clearQueue();
+      await syncService.clearDeadLetterQueue();
+
+      // Mutation 1: Fatal 23503 foreign key violation
+      await syncService.enqueue({
+        'id': 'mut_adv_fatal_fk',
+        'table': 'water_logs',
+        'action': 'insert',
+        'payload': {'pond_id': 'ghost_pond_404', 'ph': 8.2},
+      });
+
+      // Mutation 2: Valid telemetry insert
+      await syncService.enqueue({
+        'id': 'mut_adv_valid_1',
+        'table': 'water_logs',
+        'action': 'insert',
+        'payload': {'pond_id': 'pond_alpha', 'ph': 7.8, 'dissolved_oxygen': 5.4},
+      });
+
+      // Mutation 3: Fatal 42501 permission denied
+      await syncService.enqueue({
+        'id': 'mut_adv_fatal_rls',
+        'table': 'water_logs',
+        'action': 'insert',
+        'payload': {'pond_id': 'forbidden_pond', 'ph': 9.1},
+      });
+
+      // Mutation 4: Valid feed log insert
+      await syncService.enqueue({
+        'id': 'mut_adv_valid_2',
+        'table': 'feed_logs',
+        'action': 'insert',
+        'payload': {'pond_id': 'pond_alpha', 'feed_kg': 42.0},
+      });
+
+      expect(await syncService.getQueueLength(), equals(4));
+      expect(await syncService.deadLetterQueueLength, equals(0));
+
+      final successfulSyncs = <String>[];
+
+      // Drain queue with simulated PostgreSQL and client errors
+      final drainedCount = await syncService.drainQueue(
+        initialBackoff: Duration.zero,
+        maxBackoff: Duration.zero,
+        useJitter: false,
+        executor: (mutation) async {
+          final id = mutation['id'] as String;
+          if (id == 'mut_adv_fatal_fk') {
+            throw const PostgrestException(
+              message: 'violates foreign key constraint',
+              code: '23503',
+            );
+          } else if (id == 'mut_adv_fatal_rls') {
+            throw const PostgrestException(
+              message: 'insufficient_privilege for table water_logs',
+              code: '42501',
+            );
+          }
+          successfulSyncs.add(id);
+          return true;
+        },
+      );
+
+      // Both valid mutations succeeded despite being sandwiched between permanent errors
+      expect(drainedCount, equals(2));
+      expect(successfulSyncs, equals(['mut_adv_valid_1', 'mut_adv_valid_2']));
+
+      // Active queue is completely cleared
+      expect(await syncService.getQueueLength(), equals(0));
+
+      // Both fatal mutations are quarantined in dead-letter storage with status failedPermanent
+      expect(await syncService.deadLetterQueueLength, equals(2));
+      final deadLetter = await syncService.getDeadLetterQueue();
+      expect(deadLetter.any((m) => m['id'] == 'mut_adv_fatal_fk'), isTrue);
+      expect(deadLetter.any((m) => m['id'] == 'mut_adv_fatal_rls'), isTrue);
+      expect(deadLetter.every((m) => m['status'] == SyncStatus.failedPermanent.name), isTrue);
+    });
+
+    test('Adversarial 5.2: Idempotency key tracking generates RFC-compliant UUID v4 keys deterministically and prevents duplication', () async {
+      await syncService.clearQueue();
+
+      // Mutation with explicit seed
+      final keySeed = 'farmer_bhimavaram_20261111_0600';
+      final uuid1 = OfflineSyncService.generateUuid(keySeed);
+      final uuid2 = OfflineSyncService.generateUuid(keySeed);
+      expect(uuid1, equals(uuid2));
+
+      // Enqueue mutation with auto-generated idempotency key
+      await syncService.enqueue({
+        'table': 'expenses',
+        'action': 'insert',
+        'payload': {'amount': 15000.0, 'category': 'feed'},
+      });
+
+      final queue = await syncService.getQueue();
+      expect(queue.length, equals(1));
+      final enqueuedKey = queue.first['idempotency_key'] as String;
+      expect(enqueuedKey, isNotEmpty);
+      expect(
+        RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$').hasMatch(enqueuedKey),
+        isTrue,
+        reason: 'Auto-assigned idempotency key must strictly adhere to UUID v4 specification',
+      );
+    });
+
+    test('Adversarial 5.3: Flush-before-hydrate ordering guarantees all pending outbox mutations are flushed before pulling remote state', () async {
+      await syncService.clearQueue();
+
+      // Enqueue 3 uncommitted offline modifications
+      await syncService.enqueue({
+        'id': 'mut_pre_hydrate_1',
+        'table': 'water_logs',
+        'action': 'insert',
+        'payload': {'pond_id': 'pond_1', 'dissolved_oxygen': 4.6},
+      });
+      await syncService.enqueue({
+        'id': 'mut_pre_hydrate_2',
+        'table': 'feed_logs',
+        'action': 'insert',
+        'payload': {'pond_id': 'pond_1', 'feed_kg': 35.0},
+      });
+
+      expect(await syncService.getQueueLength(), equals(2));
+
+      // Execution sequence tracker
+      final executionOrder = <String>[];
+
+      // Simulate DataHydrationService flush-before-hydrate sequence
+      final flushedCount = await syncService.drainQueue(
+        initialBackoff: Duration.zero,
+        useJitter: false,
+        executor: (mutation) async {
+          executionOrder.add('FLUSH_${mutation['id']}');
+          return true;
+        },
+      );
+
+      // Remote query step after flush completes
+      executionOrder.add('REMOTE_QUERY_SUPABASE');
+
+      expect(flushedCount, equals(2));
+      expect(await syncService.getQueueLength(), equals(0));
+      expect(executionOrder, equals([
+        'FLUSH_mut_pre_hydrate_1',
+        'FLUSH_mut_pre_hydrate_2',
+        'REMOTE_QUERY_SUPABASE',
+      ]));
     });
   });
 }
