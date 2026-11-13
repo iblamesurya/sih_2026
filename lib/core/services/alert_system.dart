@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import '../ffi/prawnguard_ffi.dart';
 
 /// Severity levels for water quality telemetry and system alerts.
 enum AlertSeverity {
@@ -70,6 +71,28 @@ class AlertSystem {
     final fractionNh3 = 1.0 / (1.0 + math.pow(10.0, pKa - ph.clamp(5.0, 11.0)));
     final nh3 = tanMgL * fractionNh3;
     return double.parse(nh3.toStringAsFixed(4));
+  }
+
+  /// Evaluates water quality telemetry via native Rust C-ABI FFI when available.
+  Map<String, dynamic>? evaluateWaterQualityNative({
+    required double ph,
+    required double doMgL,
+    required double salinityPpt,
+    required double tempC,
+    required double ammoniaTanMgL,
+    required double alkalinityPpm,
+  }) {
+    if (PrawnGuardFfi.instance.isAvailable) {
+      return PrawnGuardFfi.instance.evaluateWaterQuality(
+        ph: ph,
+        doMgL: doMgL,
+        salinityPpt: salinityPpt,
+        tempC: tempC,
+        ammoniaTanMgL: ammoniaTanMgL,
+        alkalinityPpm: alkalinityPpm,
+      );
+    }
+    return null;
   }
 
   /// Evaluates all provided water parameters and returns a list of [WaterAlert]s.

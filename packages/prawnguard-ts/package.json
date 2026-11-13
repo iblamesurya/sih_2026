@@ -1,0 +1,24 @@
+{
+  "name": "@prawnguard/core",
+  "version": "1.0.0",
+  "description": "PrawnGuard.ai Native TypeScript Aquaculture Core Engine & Offline Outbox SDK",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "cli": "node --experimental-strip-types src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "aquaculture",
+    "prawnguard",
+    "shrimp-farming",
+    "offline-first",
+    "outbox",
+    "bio-energetics",
+    "ai"
+  ],
+  "author": "PrawnGuard Team",
+  "license": "MIT"
+}

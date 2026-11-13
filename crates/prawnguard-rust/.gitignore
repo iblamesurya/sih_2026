@@ -1,1 +1,8 @@
-/target
+/target/
+**/target/
+*.rlib
+*.rmeta
+*.pdb
+*.exp
+*.dll.lib
+Cargo.lock

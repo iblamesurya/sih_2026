@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import '../ffi/prawnguard_ffi.dart';
 import 'subscription_service.dart';
 import 'supabase_client.dart';
 
@@ -793,6 +794,25 @@ class PrawnDocAIService {
         notes.contains('muddy gill') ||
         notes.contains('clogged')) {
       return _buildGillTurbidityResult(imageHash);
+    }
+
+    // Extended heuristic: Native Rust C-ABI FFI evaluation for complex symptom combinations
+    if (PrawnGuardFfi.instance.isAvailable && notes.isNotEmpty) {
+      final ffiRes = PrawnGuardFfi.instance.diagnoseSymptoms([notes]);
+      if (ffiRes != null && ffiRes.containsKey('disease_code')) {
+        final code = (ffiRes['disease_code'] as String?)?.toUpperCase() ?? '';
+        if (code == 'WSSV') return _buildWssvResult(imageHash);
+        if (code == 'AHPND') return _buildAhpndResult(imageHash);
+        if (code == 'EHP') return _buildEhpResult(imageHash);
+        if (code == 'WFS') return _buildWfsResult(imageHash);
+        if (code.contains('GILL')) return _buildBlackGillResult(imageHash);
+        if (code == 'RMS') return _buildRmsResult(imageHash);
+        if (code == 'LSS') return _buildLssResult(imageHash);
+        if (code == 'IMNV') return _buildImnvResult(imageHash);
+        if (code.contains('VIBRIO')) return _buildVibriosisResult(imageHash);
+        if (code == 'YHV') return _buildYhvResult(imageHash);
+        if (code.contains('COTTON') || code.contains('MICRO')) return _buildMicrosporidiosisResult(imageHash);
+      }
     }
 
     // Default: Healthy Specimen / No Pathological Lesions

@@ -1,8 +1,11 @@
 use std::collections::{HashSet, VecDeque};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+static MUTATION_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// Status lifecycle for offline mutations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,7 +39,8 @@ impl OutboxMutation {
         base_version: Option<u32>,
     ) -> Self {
         let now = Utc::now();
-        let id = format!("mut_{}", now.timestamp_micros());
+        let seq = MUTATION_SEQ.fetch_add(1, Ordering::Relaxed);
+        let id = format!("mut_{}_{}", now.timestamp_micros(), seq);
         Self {
             id,
             idempotency_key: Uuid::new_v4(),
@@ -195,13 +199,18 @@ impl OfflineOutboxEngine {
         quarantined_ids
     }
 
-    /// Returns the set of all entity IDs with pending in-flight mutations.
+    /// Returns the set of all entity IDs and idempotency keys with pending in-flight mutations.
     /// Used by hydration engines to prevent remote server state from overwriting clean local edits.
     pub fn get_dirty_entity_ids(&self) -> HashSet<String> {
         let state = self.state.lock().expect("Outbox lock poisoned");
-        state.queue.iter()
-            .filter_map(|m| m.entity_id())
-            .collect()
+        let mut set = HashSet::new();
+        for m in state.queue.iter() {
+            if let Some(id) = m.entity_id() {
+                set.insert(id);
+            }
+            set.insert(m.idempotency_key.to_string());
+        }
+        set
     }
 
     /// Returns count of active queued mutations.

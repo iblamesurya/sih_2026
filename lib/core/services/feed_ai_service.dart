@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../ffi/prawnguard_ffi.dart';
 
 /// Single meal allocation item in the 4-meal daily feeding schedule.
 @immutable
@@ -345,6 +346,59 @@ class FeedAIService {
       meal2Kg: meal2,
       meal3Kg: meal3,
       meal4Kg: meal4,
+    );
+  }
+
+  /// Calculates bio-energetic daily feed recommendation using native Rust FFI when available,
+  /// preserving pure-Dart fallback for web/unsupported platforms.
+  DailyFeedPlan calculateDailyFeedNative({
+    required double density,
+    required double areaHa,
+    required double survivalRate,
+    required double abw,
+    required int doc,
+    required double temperature,
+    double? trayAdjustment,
+    CheckTrayStatus? trayStatus,
+    bool applyLargeShrimpCurve = false,
+  }) {
+    if (PrawnGuardFfi.instance.isAvailable) {
+      final effectiveTrayAdjustment =
+          trayAdjustment ?? (trayStatus != null ? trayAdjustmentFromStatus(trayStatus) : null);
+      final ffiRes = PrawnGuardFfi.instance.calculateFeed(
+        stockingDensityPerM2: density,
+        areaHa: areaHa,
+        survivalRate: survivalRate,
+        currentAbwG: abw,
+        doc: doc,
+        waterTempC: temperature,
+        prevTrayLeftoverPct: effectiveTrayAdjustment != null ? -effectiveTrayAdjustment * 100 : 0.0,
+      );
+      if (ffiRes != null && ffiRes.containsKey('adjusted_daily_feed_kg')) {
+        return DailyFeedPlan(
+          biomassKg: (ffiRes['biomass_kg'] as num?)?.toDouble() ?? 0.0,
+          feedingRate: (ffiRes['feeding_rate'] as num?)?.toDouble() ?? 0.0,
+          baseDailyFeedKg: (ffiRes['base_daily_feed_kg'] as num?)?.toDouble() ?? 0.0,
+          tempFactor: (ffiRes['temp_factor'] as num?)?.toDouble() ?? 1.0,
+          trayFactor: (ffiRes['tray_factor'] as num?)?.toDouble() ?? 1.0,
+          adjustedDailyFeedKg: (ffiRes['adjusted_daily_feed_kg'] as num?)?.toDouble() ?? 0.0,
+          meal1Kg: (ffiRes['meal1_kg'] as num?)?.toDouble() ?? 0.0,
+          meal2Kg: (ffiRes['meal2_kg'] as num?)?.toDouble() ?? 0.0,
+          meal3Kg: (ffiRes['meal3_kg'] as num?)?.toDouble() ?? 0.0,
+          meal4Kg: (ffiRes['meal4_kg'] as num?)?.toDouble() ?? 0.0,
+        );
+      }
+    }
+    return calculateDailyFeed(
+      density: density,
+      areaHa: areaHa,
+      survivalRate: survivalRate,
+      abw: abw,
+      doc: doc,
+      temperature: temperature,
+      trayAdjustment: trayAdjustment,
+      trayStatus: trayStatus,
+      applyLargeShrimpCurve: applyLargeShrimpCurve,
     );
   }
 

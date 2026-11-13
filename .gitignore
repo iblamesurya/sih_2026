@@ -1,8 +1,24 @@
-.dart_tool/
+# Rust build artifacts
+/crates/prawnguard-rust/target/
+**/target/
+target/
+*.rlib
+*.rmeta
+*.pdb
+*.exp
+*.dll.lib
+Cargo.lock
+
+# Flutter / Dart build artifacts
+/build/
+/.dart_tool/
 .build/
 build/
+.dart_tool/
 .pub-cache/
 .pub/
+.flutter-plugins
+.flutter-plugins-dependencies
 *.lock
 .env
 **/.env
@@ -35,11 +51,6 @@ node_modules/
 tools/
 .blarc
 **/.blarc
-
-# Rust artifacts
-target/
-**/target/
-Cargo.lock
 
 # Test & coverage artifacts
 coverage/

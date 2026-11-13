@@ -246,19 +246,13 @@ fn test_c_ffi_native_interop() {
     let ver_cstr = unsafe { std::ffi::CStr::from_ptr(ver_ptr) };
     assert!(ver_cstr.to_str().unwrap().contains("0.1.0"));
 
-    // 2. Mandi Price FFI
+    // 2. Mandi Price FFI (returns f64)
     let hub_cstr = std::ffi::CString::new("Bhimavaram").unwrap();
-    let price_ptr = unsafe { prawnguard_get_mandi_price(hub_cstr.as_ptr(), 30) };
-    assert!(!price_ptr.is_null());
-    let price_str = unsafe {
-        let s = std::ffi::CStr::from_ptr(price_ptr).to_str().unwrap().to_string();
-        prawnguard_free_string(price_ptr);
-        s
-    };
-    assert!(price_str.contains("price_inr_per_kg"));
+    let price = unsafe { prawnguard_get_mandi_price(hub_cstr.as_ptr(), 30) };
+    assert!(price > 350.0);
 
     // 3. Estimate Harvest FFI
-    let est_ptr = unsafe { prawnguard_estimate_harvest(1000.0, 30, hub_cstr.as_ptr()) };
+    let est_ptr = unsafe { prawnguard_estimate_harvest(hub_cstr.as_ptr(), 1000.0, 30) };
     assert!(!est_ptr.is_null());
     let est_str = unsafe {
         let s = std::ffi::CStr::from_ptr(est_ptr).to_str().unwrap().to_string();
@@ -267,6 +261,77 @@ fn test_c_ffi_native_interop() {
     };
     assert!(est_str.contains("gross_revenue_inr"));
 
-    // 4. Security Verification FFI
-    assert_eq!(prawnguard_verify_security(0), 1);
+    // 4. Security Verification FFI (returns *mut c_char)
+    let sec_ptr = prawnguard_verify_security();
+    assert!(!sec_ptr.is_null());
+    let sec_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(sec_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(sec_ptr);
+        s
+    };
+    assert!(sec_str.contains("defense_score"));
+
+    // 5. Diagnose Symptoms FFI
+    let symptoms_cstr = std::ffi::CString::new("white spots, red body").unwrap();
+    let diag_ptr = unsafe { prawnguard_diagnose_symptoms(symptoms_cstr.as_ptr()) };
+    assert!(!diag_ptr.is_null());
+    let diag_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(diag_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(diag_ptr);
+        s
+    };
+    assert!(diag_str.contains("WSSV"));
+
+    // 6. Calculate Feed FFI
+    let feed_ptr = prawnguard_calculate_feed(60.0, 1.0, 0.85, 18.0, 75, 29.0, 0.0, 0, 0);
+    assert!(!feed_ptr.is_null());
+    let feed_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(feed_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(feed_ptr);
+        s
+    };
+    assert!(feed_str.contains("adjusted_daily_feed_kg"));
+
+    // 7. Evaluate Water Quality FFI
+    let wq_ptr = prawnguard_evaluate_water_quality(7.8, 5.5, 15.0, 29.0, 0.2, 120.0);
+    assert!(!wq_ptr.is_null());
+    let wq_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(wq_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(wq_ptr);
+        s
+    };
+    assert!(wq_str.contains("severity"));
+
+    // 8. Parse Telugu Voice FFI
+    let voice_cstr = std::ffi::CString::new("cheruvu 1 lo pH 7.8 DO 3.2 ammonia 0.08").unwrap();
+    let tel_ptr = unsafe { prawnguard_parse_telugu_voice(voice_cstr.as_ptr()) };
+    assert!(!tel_ptr.is_null());
+    let tel_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(tel_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(tel_ptr);
+        s
+    };
+    assert!(tel_str.contains("7.8"));
+
+    // 9. Analyze ABW FFI
+    let lengths_cstr = std::ffi::CString::new("[12.0, 12.5, 13.0, 12.2, 12.8]").unwrap();
+    let abw_ptr = unsafe { prawnguard_analyze_abw(lengths_cstr.as_ptr(), 65) };
+    assert!(!abw_ptr.is_null());
+    let abw_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(abw_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(abw_ptr);
+        s
+    };
+    assert!(abw_str.contains("mean_abw_grams"));
+
+    // 10. Evaluate Credit Score FFI
+    let ponds_cstr = std::ffi::CString::new("[{\"id\":\"p1\",\"user_id\":\"u1\",\"name\":\"Pond 1\",\"species\":\"vannamei\",\"area_ha\":1.0,\"stocking_density\":60.0,\"doc\":75,\"stocking_date\":\"2026-08-01\",\"initial_abw\":0.02,\"current_abw\":18.0,\"survival_rate\":0.88,\"status\":\"Active\",\"version\":1}]").unwrap();
+    let cred_ptr = unsafe { prawnguard_evaluate_credit_score(ponds_cstr.as_ptr(), std::ptr::null(), std::ptr::null(), std::ptr::null(), 5000.0) };
+    assert!(!cred_ptr.is_null());
+    let cred_str = unsafe {
+        let s = std::ffi::CStr::from_ptr(cred_ptr).to_str().unwrap().to_string();
+        prawnguard_free_string(cred_ptr);
+        s
+    };
+    assert!(cred_str.contains("score"));
 }

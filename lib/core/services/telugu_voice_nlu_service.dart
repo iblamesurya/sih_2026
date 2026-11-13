@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../ffi/prawnguard_ffi.dart';
 
 /// Parsed telemetry entity container returned by [TeluguVoiceNLUService].
 @immutable
@@ -129,6 +130,35 @@ class TeluguVoiceNLUService {
   ParsedTelemetry parseVoiceInput(String transcript) {
     if (transcript.trim().isEmpty) {
       return const ParsedTelemetry();
+    }
+
+    // High-performance native Rust FFI acceleration when available
+    if (PrawnGuardFfi.instance.isAvailable) {
+      final ffiRes = PrawnGuardFfi.instance.parseTeluguVoice(transcript);
+      if (ffiRes != null && ffiRes.containsKey('confidence')) {
+        final pIdx = (ffiRes['pond_index'] ?? ffiRes['pond_number']) as int?;
+        final phVal = (ffiRes['ph'] as num?)?.toDouble();
+        final doVal = (ffiRes['do_level'] ?? ffiRes['dissolved_oxygen']) as num?;
+        final salVal = (ffiRes['salinity'] as num?)?.toDouble();
+        final tempVal = (ffiRes['temperature'] as num?)?.toDouble();
+        final ammVal = (ffiRes['ammonia'] as num?)?.toDouble();
+        final alkVal = (ffiRes['alkalinity'] as num?)?.toDouble();
+        final feedVal = (ffiRes['feed_kg'] as num?)?.toDouble();
+        final conf = (ffiRes['confidence'] as num?)?.toDouble() ?? 1.0;
+
+        return ParsedTelemetry(
+          pondIndex: pIdx,
+          ph: phVal,
+          doLevel: doVal?.toDouble(),
+          salinity: salVal,
+          temperature: tempVal,
+          ammonia: ammVal,
+          alkalinity: alkVal,
+          feedKg: feedVal,
+          confidence: conf,
+          rawTranscript: transcript,
+        );
+      }
     }
 
     final lower = _normalizeTeluguNumberWords(transcript.toLowerCase());
