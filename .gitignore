@@ -36,5 +36,10 @@ tools/
 .blarc
 **/.blarc
 
+# Rust artifacts
+target/
+**/target/
+Cargo.lock
+
 # Test & coverage artifacts
 coverage/
